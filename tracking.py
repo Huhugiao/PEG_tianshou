@@ -230,6 +230,9 @@ class TrackingEnv(gym.Env):
             self.last_target_distance_error,
             self.last_target_angle_error
             ], dtype=np.float32)
+        
+        if god_view_array.size == 0:
+            god_view_array = np.zeros(7, dtype=np.float32)
 
         # 需要的回合辅助信息
         info = {
@@ -364,6 +367,9 @@ class TrackingEnv(gym.Env):
             self.last_target_distance_error,
             self.last_target_angle_error
         ], dtype=np.float32)
+
+        if god_view_array.size == 0:
+            god_view_array = np.zeros(7, dtype=np.float32)
 
         # 需要的回合辅助信息
         info = {

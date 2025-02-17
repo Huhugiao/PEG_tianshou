@@ -5,20 +5,108 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-from tianshou.data import Collector, PrioritizedVectorReplayBuffer, VectorReplayBuffer
+from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch
 from tianshou.env import SubprocVectorEnv
-from tianshou.policy import PPOPolicy
 from tianshou.trainer import OnpolicyTrainer
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net, ActorCritic
 from tianshou.utils.net.discrete import Actor, Critic
+from tianshou.utils.net.common import MLP
+from typing import Any, Callable, Dict, List, Optional, Union, Sequence
 import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+from tscollector import Collector
+from tsppo import PPOPolicy
+
+if not hasattr(algo_config, 'god_view_shape'):
+    algo_config.god_view_shape = (7,) 
+
+class Critic(nn.Module):
+    def __init__(
+        self,
+        preprocess_net: nn.Module,
+        hidden_sizes: Sequence[int] = (),
+        last_size: int = 1,
+        preprocess_net_output_dim: Optional[int] = None,
+        device: Union[str, int, torch.device] = "cpu",
+    ) -> None:
+        super().__init__()
+        self.device = device
+        self.preprocess = preprocess_net
+        self.output_dim = last_size
+        input_dim = getattr(preprocess_net, "output_dim", preprocess_net_output_dim)
+        self.last = MLP(
+            input_dim,
+            last_size,
+            hidden_sizes,
+            device=self.device
+        )
+
+    def forward(
+        self, obs: Union[np.ndarray, torch.Tensor],
+        state: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        info: Dict[str, Any] = {},
+        god_view: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """Mapping: s -> V(s)."""
+        print("obs shape:", obs.shape)
+        if god_view is not None:
+            print("god_view shape:", god_view.shape)
+            obs = torch.cat([obs, god_view], dim=-1)
+            print("concatenated obs shape:", obs.shape)
+        logits, _ = self.preprocess(obs, state=state)
+        return self.last(logits).flatten()
+
+
+class Actor(nn.Module):
+    def __init__(
+        self,
+        preprocess_net: nn.Module,
+        action_shape: Sequence[int],
+        hidden_sizes: Sequence[int] = (),
+        softmax_output: bool = True,
+        preprocess_net_output_dim: Optional[int] = None,
+        device: Union[str, int, torch.device] = "cpu",
+    ) -> None:
+        super().__init__()
+        self.device = device
+        self.preprocess = preprocess_net
+        self.output_dim = int(np.prod(action_shape))
+        input_dim = getattr(preprocess_net, "output_dim", preprocess_net_output_dim)
+        self.last = MLP(
+            input_dim,
+            self.output_dim,
+            hidden_sizes,
+            device=self.device
+        )
+        self.softmax_output = softmax_output
+        self.dist_fn = torch.distributions.Categorical
+
+    def forward(
+        self,
+        obs: Union[np.ndarray, torch.Tensor],
+        state: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        info: Dict[str, Any] = {},
+        god_view: Optional[torch.Tensor] = None
+    ) -> Batch:
+        """Mapping: s -> A(s)."""
+        if god_view is not None:
+            god_view = torch.tensor(god_view).to(obs.device)
+            obs = torch.cat([obs, god_view], dim=-1)
+        logits, _ = self.preprocess(obs, state=state)
+        logits = self.last(logits)
+        if self.softmax_output:
+            logits = F.softmax(logits, dim=-1)
+        dist = self.dist_fn(logits=logits)
+        return Batch(logits=logits, dist=dist)
+
+
 def Train():
-    env = gym.make(algo_config.task, cl_flag=algo_config.cl_flag,\
+    env = gym.make(algo_config.task, cl_flag=algo_config.cl_flag,
             target_mode="Fix", obstacle_mode="Dynamic", training_stage=algo_config.training_stage)
     algo_config.state_shape = env.observation_space.shape
     algo_config.action_shape = env.action_space.n
@@ -30,11 +118,11 @@ def Train():
 
     # 构建训练环境和测试环境
     train_envs = SubprocVectorEnv(
-        [lambda: gym.make(algo_config.task, cl_flag=algo_config.cl_flag, \
+        [lambda: gym.make(algo_config.task, cl_flag=algo_config.cl_flag,
             target_mode="Fix", obstacle_mode="Dynamic", training_stage=algo_config.training_stage) for _ in
          range(algo_config.training_num)])
     test_envs = SubprocVectorEnv(
-        [lambda: gym.make(algo_config.task, cl_flag=algo_config.cl_flag, \
+        [lambda: gym.make(algo_config.task, cl_flag=algo_config.cl_flag,
             target_mode="Fix", obstacle_mode="Dynamic", training_stage=algo_config.training_stage) for _ in
          range(algo_config.test_num)])
 
@@ -66,7 +154,7 @@ def Train():
         device=algo_config.device,
         )
     critic = Critic(
-        net,
+        net_c,  
         device=algo_config.device,
         )
     actor_critic = ActorCritic(actor, critic).to(algo_config.device)
@@ -223,7 +311,5 @@ def Train_Prioritized():
     algo_config.resume = True
     Train()
 
-
 if __name__ == "__main__":
     Train()
-
