@@ -190,6 +190,21 @@ def Train():
         else:
             print("Fail to restore buffer.")
 
+    if algo_config.watch_agent:
+        print(f"Loading agent under {log_path}")
+        ckpt_path = os.path.join(log_path, "checkpoint.pth")
+        if os.path.exists(ckpt_path):
+            checkpoint = torch.load(ckpt_path, map_location=algo_config.device)
+            policy.load_state_dict(checkpoint["model"])
+            policy.optim.load_state_dict(checkpoint["optim"])
+            print("Successfully restore policy and optim.")
+        else:
+            print("Fail to restore policy and optim.")
+        policy.eval()
+        collector = Collector(policy, env, exploration_noise=True)
+        collector.collect(n_episode=1, render=1 / 35)
+        return
+
     print(f"Model is on GPU: {next(policy.parameters()).is_cuda}")
 
     result = OnpolicyTrainer(

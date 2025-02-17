@@ -24,7 +24,7 @@ batch_size = 256  # 批处理大小，表示每次训练时从经验回放中采
 hidden_sizes = [128, 128]  # 神经网络的隐含层大小，表示每一层的神经元数量
 training_num = 30  # 训练环境数量，表示并行训练时的环境数目
 test_num = 10  # 测试环境数量，表示并行测试时的环境数目
-logdir = "performance_test_cltsppo1"  # 日志目录，用于保存训练和测试结果的路径
+logdir = "performance_test_cl0217"  # 日志目录，用于保存训练和测试结果的路径
 render = 0.1  # 渲染频率，用于可视化训练过程，指定每多少步进行一次环境渲染
 prioritized_replay = False  # 是否使用优先级经验回放，用于增强训练过程中重要经验的采样
 alpha = 0.6  # 优先级经验回放中的alpha参数，用于计算重要性采样权重
@@ -49,3 +49,5 @@ reward_normalization = True  # 是否对奖励进行规范化，通常用于加�
 
 # 特权学习参数
 god_view_shape = (7,)
+
+watch_agent = False

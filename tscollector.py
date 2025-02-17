@@ -19,30 +19,39 @@ from tianshou.policy import BasePolicy
 
 
 class Collector(object):
-    """Collector 使得策略可以在不同类型的环境中通过精确的步数或回合数与环境进行交互。
+    """Collector enables the policy to interact with different types of envs with \
+    exact number of steps or episodes.
 
-    :param policy: 一个 :class:`~tianshou.policy.BasePolicy` 类的实例。
-    :param env: 一个 ``gym.Env`` 环境或一个 :class:`~tianshou.env.BaseVectorEnv` 类的实例。
-    :param buffer: 一个 :class:`~tianshou.data.ReplayBuffer` 类的实例。
-        如果设置为 None，则不会存储数据。默认为 None。
-    :param function preprocess_fn: 一个函数，在数据被添加到缓冲区之前调用，详见 issue #42 和 :ref:`preprocess_fn`。默认为 None。
-    :param bool exploration_noise: 确定动作是否需要被对应的策略的探索噪声修改。如果是，则自动调用 "policy.exploration_noise(act, batch)" 在动作中添加探索噪声。默认为 False。
+    :param policy: an instance of the :class:`~tianshou.policy.BasePolicy` class.
+    :param env: a ``gym.Env`` environment or an instance of the
+        :class:`~tianshou.env.BaseVectorEnv` class.
+    :param buffer: an instance of the :class:`~tianshou.data.ReplayBuffer` class.
+        If set to None, it will not store the data. Default to None.
+    :param function preprocess_fn: a function called before the data has been added to
+        the buffer, see issue #42 and :ref:`preprocess_fn`. Default to None.
+    :param bool exploration_noise: determine whether the action needs to be modified
+        with corresponding policy's exploration noise. If so, "policy.
+        exploration_noise(act, batch)" will be called automatically to add the
+        exploration noise into action. Default to False.
 
-    preprocess_fn 是一个函数，在数据被添加到缓冲区之前调用，以批量格式接收数据。
-    当 Collector 重置环境时，它将只接收到 "obs" 和 "env_id"。在正常环境步骤中，
-    它将接收到键 "obs_next", "rew", "terminated", "truncated", "info", "policy" 和 "env_id"。
-    也可以使用键 "obs_next", "rew", "done", "info", "policy" 和 "env_id"。
-    它返回一个字典或一个 :class:`~tianshou.data.Batch` 类型的对象，带有修改后的键和值。
-    示例见 "test/base/test_collector.py"。
+    The "preprocess_fn" is a function called before the data has been added to the
+    buffer with batch format. It will receive only "obs" and "env_id" when the
+    collector resets the environment, and will receive the keys "obs_next", "rew",
+    "terminated", "truncated, "info", "policy" and "env_id" in a normal env step.
+    Alternatively, it may also accept the keys "obs_next", "rew", "done", "info",
+    "policy" and "env_id".
+    It returns either a dict or a :class:`~tianshou.data.Batch` with the modified
+    keys and values. Examples are in "test/base/test_collector.py".
 
     .. note::
 
-        请确保给定的环境有一个时间限制，如果使用 n_episode 收集选项。
+        Please make sure the given environment has a time limitation if using n_episode
+        collect option.
 
     .. note::
 
-        在 Tianshou 的早期版本中，传递给 `__init__` 的重放缓冲区会自动重置。
-        目前的实现中不会这样做。
+        In past versions of Tianshou, the replay buffer that was passed to `__init__`
+        was automatically reset. This is not done in the current implementation.
     """
 
     def __init__(
@@ -55,7 +64,7 @@ class Collector(object):
     ) -> None:
         super().__init__()
         if isinstance(env, gym.Env) and not hasattr(env, "__len__"):
-            warnings.warn("检测到单个环境，将其包装为 DummyVectorEnv。")
+            warnings.warn("Single environment detected, wrap to DummyVectorEnv.")
             self.env = DummyVectorEnv([lambda: env])  # type: ignore
         else:
             self.env = env  # type: ignore
@@ -65,18 +74,18 @@ class Collector(object):
         self.policy = policy
         self.preprocess_fn = preprocess_fn
         self._action_space = self.env.action_space
-        # 避免在 __init__ 之外创建属性
+        # avoid creating attribute outside __init__
         self.reset(False)
 
     def _assign_buffer(self, buffer: Optional[ReplayBuffer]) -> None:
-        """检查缓冲区是否符合约束。"""
+        """Check if the buffer matches the constraint."""
         if buffer is None:
             buffer = VectorReplayBuffer(self.env_num, self.env_num)
         elif isinstance(buffer, ReplayBufferManager):
             assert buffer.buffer_num >= self.env_num
             if isinstance(buffer, CachedReplayBuffer):
                 assert buffer.cached_buffer_num >= self.env_num
-        else:  # ReplayBuffer 或 PrioritizedReplayBuffer
+        else:  # ReplayBuffer or PrioritizedReplayBuffer
             assert buffer.maxsize > 0
             if self.env_num > 1:
                 if type(buffer) == ReplayBuffer:
@@ -86,9 +95,9 @@ class Collector(object):
                     buffer_type = "PrioritizedReplayBuffer"
                     vector_type = "PrioritizedVectorReplayBuffer"
                 raise TypeError(
-                    f"无法使用 {buffer_type}(size={buffer.maxsize}, ...) 来收集 "
-                    f"{self.env_num} 个环境的数据，\n\t请使用 {vector_type}(total_size="
-                    f"{buffer.maxsize}, buffer_num={self.env_num}, ...) 代替。"
+                    f"Cannot use {buffer_type}(size={buffer.maxsize}, ...) to collect "
+                    f"{self.env_num} envs,\n\tplease use {vector_type}(total_size="
+                    f"{buffer.maxsize}, buffer_num={self.env_num}, ...) instead."
                 )
         self.buffer = buffer
 
@@ -97,12 +106,15 @@ class Collector(object):
         reset_buffer: bool = True,
         gym_reset_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """重置环境、统计数据、当前数据和可能的重放缓冲区。
+        """Reset the environment, statistics, current data and possibly replay memory.
 
-        :param bool reset_buffer: 如果为真，则重置附加到 Collector 的重放缓冲区。
-        :param gym_reset_kwargs: 额外的关键字参数传递给环境的 reset 函数。默认为 None。
+        :param bool reset_buffer: if true, reset the replay buffer that is attached
+            to the collector.
+        :param gym_reset_kwargs: extra keyword arguments to pass into the environment's
+            reset function. Defaults to None (extra keyword arguments)
         """
-        # 使用空 Batch 来避免 self.data 支持切片时出现问题
+        # use empty Batch for "state" so that self.data supports slicing
+        # convert empty Batch to None when passing data to policy
         self.data = Batch(
             obs={},
             act={},
@@ -121,15 +133,15 @@ class Collector(object):
         self.reset_stat()
 
     def reset_stat(self) -> None:
-        """重置统计变量。"""
+        """Reset the statistic variables."""
         self.collect_step, self.collect_episode, self.collect_time = 0, 0, 0.0
 
     def reset_buffer(self, keep_statistics: bool = False) -> None:
-        """重置数据缓冲区。"""
+        """Reset the data buffer."""
         self.buffer.reset(keep_statistics=keep_statistics)
 
     def reset_env(self, gym_reset_kwargs: Optional[Dict[str, Any]] = None) -> None:
-        """重置所有环境。"""
+        """Reset all of the environments."""
         gym_reset_kwargs = gym_reset_kwargs if gym_reset_kwargs else {}
         rval = self.env.reset(**gym_reset_kwargs)
         returns_info = isinstance(rval, (tuple, list)) and len(rval) == 2 and (
@@ -137,7 +149,7 @@ class Collector(object):
         )
         if returns_info:
             obs, info = rval
-            god_view = info.get('god_view_info', None) if 'god_view_info' in info else {}
+            god_view = [item.get('god_view_info') for item in info if 'god_view_info' in item]
             if self.preprocess_fn:
                 processed_data = self.preprocess_fn(
                     obs=obs, info=info, env_id=np.arange(self.env_num)
@@ -147,7 +159,6 @@ class Collector(object):
                 god_view = processed_data.get("god_view", god_view)
                 if god_view.size == 0:
                     god_view = np.zeros(7, dtype=np.float32)
-                print(f"god_view = {god_view}")  # 调试信息
             self.data.info = info
             self.data.god_view = god_view
         else:
@@ -158,9 +169,9 @@ class Collector(object):
         self.data.obs = obs
 
     def _reset_state(self, id: Union[int, List[int]]) -> None:
-        """重置隐藏状态：self.data.policy[id]."""
+        """Reset the hidden state: self.data.state[id]."""
         if hasattr(self.data.policy, "hidden_state"):
-            state = self.data.policy.hidden_state  # 这是一个引用
+            state = self.data.policy.hidden_state  # it is a reference
             if isinstance(state, torch.Tensor):
                 state[id].zero_()
             elif isinstance(state, np.ndarray):
@@ -181,10 +192,7 @@ class Collector(object):
         )
         if returns_info:
             obs_reset, info = rval
-            god_view = info.get('god_view_info', None) if 'god_view_info' in info else {}
-            if god_view.size == 0:
-                god_view = np.zeros(7, dtype=np.float32)
-            print(f"god_view = {god_view}")  # 调试信息
+            god_view = [item.get('god_view_info') for item in info if 'god_view_info' in item]
             if self.preprocess_fn:
                 processed_data = self.preprocess_fn(
                     obs=obs_reset, info=info, env_id=global_ids
@@ -192,7 +200,7 @@ class Collector(object):
                 obs_reset = processed_data.get("obs", obs_reset)
                 info = processed_data.get("info", info)
                 god_view = processed_data.get("god_view", god_view)
-                
+
             self.data.info[local_ids] = info
             self.data.god_view[local_ids] = god_view
         else:
@@ -211,47 +219,51 @@ class Collector(object):
         no_grad: bool = True,
         gym_reset_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """收集指定数量的步数或回合。
+        """Collect a specified number of step or episode.
 
-        为了确保使用 n_episode 选项时采样的无偏结果，此函数将首先收集 ``n_episode - env_num`` 个回合，
-        然后在最后 ``env_num`` 个回合中，它们将从每个环境中均匀收集。
+        To ensure unbiased sampling result with n_episode option, this function will
+        first collect ``n_episode - env_num`` episodes, then for the last ``env_num``
+        episodes, they will be collected evenly from each env.
 
-        :param int n_step: 您希望收集的步数。
-        :param int n_episode: 您希望收集的回合数。
-        :param bool random: 是否使用随机策略收集数据。默认为 False。
-        :param float render: 渲染连续帧之间的休眠时间。
-            默认为 None（不渲染）。
-        :param bool no_grad: 是否在 policy.forward() 中保留梯度。默认为 True（不保留梯度）。
-        :param gym_reset_kwargs: 额外的关键字参数传递给环境的 reset 函数。
-            默认为 None（额外的关键字参数）
+        :param int n_step: how many steps you want to collect.
+        :param int n_episode: how many episodes you want to collect.
+        :param bool random: whether to use random policy for collecting data. Default
+            to False.
+        :param float render: the sleep time between rendering consecutive frames.
+            Default to None (no rendering).
+        :param bool no_grad: whether to retain gradient in policy.forward(). Default to
+            True (no gradient retaining).
+        :param gym_reset_kwargs: extra keyword arguments to pass into the environment's
+            reset function. Defaults to None (extra keyword arguments)
 
         .. note::
 
-            只能指定一个收集数量规范，即 ``n_step`` 或 ``n_episode``。
+            One and only one collection number specification is permitted, either
+            ``n_step`` or ``n_episode``.
 
-        :return: 包含以下键的字典
+        :return: A dict including the following keys
 
-            * ``n/ep`` 收集的回合数。
-            * ``n/st`` 收集的步数。
-            * ``rews`` 收集的回合奖励数组。
-            * ``lens`` 收集的回合长度数组。
-            * ``idxs`` 收集的回合在缓冲区中的起始索引数组。
-            * ``rew`` 平均回合奖励。
-            * ``len`` 平均回合长度。
-            * ``rew_std`` 回合奖励的标准误差。
-            * ``len_std`` 回合长度的标准误差。
+            * ``n/ep`` collected number of episodes.
+            * ``n/st`` collected number of steps.
+            * ``rews`` array of episode reward over collected episodes.
+            * ``lens`` array of episode length over collected episodes.
+            * ``idxs`` array of episode start index in buffer over collected episodes.
+            * ``rew`` mean of episodic rewards.
+            * ``len`` mean of episodic lengths.
+            * ``rew_std`` standard error of episodic rewards.
+            * ``len_std`` standard error of episodic lengths.
         """
-        assert not self.env.is_async, "如果使用异步 venv，请使用 AsyncCollector。"
+        assert not self.env.is_async, "Please use AsyncCollector if using async venv."
         if n_step is not None:
             assert n_episode is None, (
-                f"在 Collector.collect() 中只能指定 n_step 或 n_episode 中的一个。"
-                f"获取 n_step={n_step}, n_episode={n_episode}。"
+                f"Only one of n_step or n_episode is allowed in Collector."
+                f"collect, got n_step={n_step}, n_episode={n_episode}."
             )
             assert n_step > 0
             if not n_step % self.env_num == 0:
                 warnings.warn(
-                    f"n_step={n_step} 不是 #env ({self.env_num}) 的倍数，"
-                    "这可能会导致额外的转换存储到缓冲区。"
+                    f"n_step={n_step} is not a multiple of #env ({self.env_num}), "
+                    "which may cause extra transitions collected into the buffer."
                 )
             ready_env_ids = np.arange(self.env_num)
         elif n_episode is not None:
@@ -260,7 +272,8 @@ class Collector(object):
             self.data = self.data[:min(self.env_num, n_episode)]
         else:
             raise TypeError(
-                "请在 collector.collect() 中指定至少一个（n_step 或 n_episode）。"
+                "Please specify at least one (either n_step or n_episode) "
+                "in AsyncCollector.collect()."
             )
 
         start_time = time.time()
@@ -273,39 +286,40 @@ class Collector(object):
 
         while True:
             assert len(self.data) == len(ready_env_ids)
-            # 恢复状态：如果最后一个状态是 None，将不会存储
+            # restore the state: if the last state is None, it won't store
             last_state = self.data.policy.pop("hidden_state", None)
 
-            # 获取下一个动作
+            # get the next action
             if random:
                 try:
                     act_sample = [
                         self._action_space[i].sample() for i in ready_env_ids
                     ]
-                except TypeError:  # envpool 的动作空间不是每个环境的
+                except TypeError:  # envpool's action space is not for per-env
                     act_sample = [self._action_space.sample() for _ in ready_env_ids]
                 act_sample = self.policy.map_action_inverse(act_sample)  # type: ignore
                 self.data.update(act=act_sample)
             else:
                 if no_grad:
-                    with torch.no_grad():  # 更快的速度
+                    with torch.no_grad():  # faster than retain_grad version
+                        # self.data.obs will be used by agent to get result
                         result = self.policy(self.data, last_state)
                 else:
                     result = self.policy(self.data, last_state)
-                # 更新 state / act / policy into self.data
+                # update state / act / policy into self.data
                 policy = result.get("policy", Batch())
                 assert isinstance(policy, Batch)
                 state = result.get("state", None)
                 if state is not None:
-                    policy.hidden_state = state  # 将状态保存到缓冲区
+                    policy.hidden_state = state  # save state into buffer
                 act = to_numpy(result.act)
                 if self.exploration_noise:
                     act = self.policy.exploration_noise(act, self.data)
                 self.data.update(policy=policy, act=act)
 
-            # 获取边界和重新映射的动作（不保存到缓冲区）
+            # get bounded and remapped actions first (not saved into buffer)
             action_remap = self.policy.map_action(self.data.act)
-            # 在环境中执行步操作
+            # step in env
             result = self.env.step(action_remap, ready_env_ids)  # type: ignore
             if len(result) == 5:
                 obs_next, rew, terminated, truncated, info = result
@@ -325,12 +339,7 @@ class Collector(object):
             else:
                 raise ValueError()
 
-            print(f"collect: info keys = {info.keys()}")  # 调试信息
-            god_view = info.get('god_view_info', None) if 'god_view_info' in info else {}
-            print(f"god_view in tscollector before processing type: {type(god_view)}, shape: {god_view.shape if hasattr(god_view, 'shape') else 'None'}")  # 调试信息
-            if god_view.size == 0:
-                god_view = np.zeros(7, dtype=np.float32)
-            print(f"god_view in tscollector after processing type: {type(god_view)}, shape: {god_view.shape if hasattr(god_view, 'shape') else 'None'}")  # 调试信息
+            god_view = [item.get('god_view_info') for item in info if 'god_view_info' in item]
 
             self.data.update(
                 obs_next=obs_next,
@@ -358,12 +367,12 @@ class Collector(object):
                 if render > 0 and not np.isclose(render, 0):
                     time.sleep(render)
 
-            # 将数据添加到缓冲区
+            # add data into the buffer
             ptr, ep_rew, ep_len, ep_idx = self.buffer.add(
                 self.data, buffer_ids=ready_env_ids
             )
 
-            # 收集统计数据
+            # collect statistics
             step_count += len(ready_env_ids)
 
             if np.any(done):
@@ -373,16 +382,16 @@ class Collector(object):
                 episode_lens.append(ep_len[env_ind_local])
                 episode_rews.append(ep_rew[env_ind_local])
                 episode_start_indices.append(ep_idx[env_ind_local])
-                # 现在我们复制 obs_next 到 obs，但由于可能有
-                # 完成的回合，我们首先需要重置完成的环境。
+                # now we copy obs_next to obs, but since there might be
+                # finished episodes, we have to reset finished envs first.
                 self._reset_env_with_ids(
                     env_ind_local, env_ind_global, gym_reset_kwargs
                 )
                 for i in env_ind_local:
                     self._reset_state(i)
 
-                # 从 ready_env_ids 中移除多余的 env id
-                # 以避免在选择环境时存在偏差
+                # remove surplus env id from ready_env_ids
+                # to avoid bias in selecting environments
                 if n_episode:
                     surplus_env_num = len(ready_env_ids) - (n_episode - episode_count)
                     if surplus_env_num > 0:
@@ -397,7 +406,7 @@ class Collector(object):
                     (n_episode and episode_count >= n_episode):
                 break
 
-        # 生成统计数据
+        # generate statistics
         self.collect_step += step_count
         self.collect_episode += episode_count
         self.collect_time += max(time.time() - start_time, 1e-9)

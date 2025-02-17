@@ -5,104 +5,19 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch
 from tianshou.env import SubprocVectorEnv
 from tianshou.trainer import OnpolicyTrainer
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net, ActorCritic
-from tianshou.utils.net.discrete import Actor, Critic
-from tianshou.utils.net.common import MLP
-from typing import Any, Callable, Dict, List, Optional, Union, Sequence
+from typing import Any, Callable, Dict, List, Optional, Union, Sequence, Tuple
 import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from tscollector import Collector
-from tsppo import PPOPolicy
-
-if not hasattr(algo_config, 'god_view_shape'):
-    algo_config.god_view_shape = (7,) 
-
-class Critic(nn.Module):
-    def __init__(
-        self,
-        preprocess_net: nn.Module,
-        hidden_sizes: Sequence[int] = (),
-        last_size: int = 1,
-        preprocess_net_output_dim: Optional[int] = None,
-        device: Union[str, int, torch.device] = "cpu",
-    ) -> None:
-        super().__init__()
-        self.device = device
-        self.preprocess = preprocess_net
-        self.output_dim = last_size
-        input_dim = getattr(preprocess_net, "output_dim", preprocess_net_output_dim)
-        self.last = MLP(
-            input_dim,
-            last_size,
-            hidden_sizes,
-            device=self.device
-        )
-
-    def forward(
-        self, obs: Union[np.ndarray, torch.Tensor],
-        state: Optional[Union[np.ndarray, torch.Tensor]] = None,
-        info: Dict[str, Any] = {},
-        god_view: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """Mapping: s -> V(s)."""
-        print("obs shape:", obs.shape)
-        if god_view is not None:
-            print("god_view shape:", god_view.shape)
-            obs = torch.cat([obs, god_view], dim=-1)
-            print("concatenated obs shape:", obs.shape)
-        logits, _ = self.preprocess(obs, state=state)
-        return self.last(logits).flatten()
-
-
-class Actor(nn.Module):
-    def __init__(
-        self,
-        preprocess_net: nn.Module,
-        action_shape: Sequence[int],
-        hidden_sizes: Sequence[int] = (),
-        softmax_output: bool = True,
-        preprocess_net_output_dim: Optional[int] = None,
-        device: Union[str, int, torch.device] = "cpu",
-    ) -> None:
-        super().__init__()
-        self.device = device
-        self.preprocess = preprocess_net
-        self.output_dim = int(np.prod(action_shape))
-        input_dim = getattr(preprocess_net, "output_dim", preprocess_net_output_dim)
-        self.last = MLP(
-            input_dim,
-            self.output_dim,
-            hidden_sizes,
-            device=self.device
-        )
-        self.softmax_output = softmax_output
-        self.dist_fn = torch.distributions.Categorical
-
-    def forward(
-        self,
-        obs: Union[np.ndarray, torch.Tensor],
-        state: Optional[Union[np.ndarray, torch.Tensor]] = None,
-        info: Dict[str, Any] = {},
-        god_view: Optional[torch.Tensor] = None
-    ) -> Batch:
-        """Mapping: s -> A(s)."""
-        if god_view is not None:
-            god_view = torch.tensor(god_view).to(obs.device)
-            obs = torch.cat([obs, god_view], dim=-1)
-        logits, _ = self.preprocess(obs, state=state)
-        logits = self.last(logits)
-        if self.softmax_output:
-            logits = F.softmax(logits, dim=-1)
-        dist = self.dist_fn(logits=logits)
-        return Batch(logits=logits, dist=dist)
+from tsppo import PPOPolicy, Actor, Critic
 
 
 def Train():
@@ -141,7 +56,7 @@ def Train():
         )
 
     net_c = Net(
-        algo_config.state_shape + algo_config.god_view_shape,
+        algo_config.state_shape[0] + algo_config.god_view_shape[0],
         algo_config.action_shape,
         hidden_sizes=algo_config.hidden_sizes,
         device=algo_config.device,
@@ -260,7 +175,6 @@ def Train():
 
     # 从历史记录中恢复训练（如果有设置）
     if algo_config.resume:
-        # load from existing checkpoint
         print(f"Loading agent under {log_path}")
         ckpt_path = os.path.join(log_path, "checkpoint.pth")
         if os.path.exists(ckpt_path):
@@ -278,7 +192,22 @@ def Train():
         else:
             print("Fail to restore buffer.")
 
-    print(f"Model is on GPU: {next(policy.parameters()).is_cuda}")
+    # 观察一次智能体仿真（如果有设置）
+    if algo_config.watch_agent:
+        print(f"Loading agent under {log_path}")
+        ckpt_path = os.path.join(log_path, "checkpoint.pth")
+        if os.path.exists(ckpt_path):
+            checkpoint = torch.load(ckpt_path, map_location=algo_config.device)
+            policy.load_state_dict(checkpoint["model"])
+            policy.optim.load_state_dict(checkpoint["optim"])
+            print("Successfully restore policy and optim.")
+        else:
+            print("Fail to restore policy and optim.")
+        policy.eval()
+        collector = Collector(policy, env, exploration_noise=True)
+        collector.collect(n_episode=1, render=1 / 35)
+        return
+        
 
     result = OnpolicyTrainer(
             policy=policy,
@@ -298,18 +227,6 @@ def Train():
             resume_from_log=algo_config.resume,
             save_checkpoint_fn=save_checkpoint_fn,
             ).run()
-
-
-# 从历史记录恢复训练
-def Train_Resume(args):
-    algo_config.resume = True
-    Train()
-
-# 使用优先经验回放训练
-def Train_Prioritized():
-    algo_config.prioritized_replay = True
-    algo_config.resume = True
-    Train()
 
 if __name__ == "__main__":
     Train()

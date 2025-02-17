@@ -230,6 +230,7 @@ class TrackingEnv(gym.Env):
             self.last_target_distance_error,
             self.last_target_angle_error
             ], dtype=np.float32)
+
         
         if god_view_array.size == 0:
             god_view_array = np.zeros(7, dtype=np.float32)
@@ -368,9 +369,6 @@ class TrackingEnv(gym.Env):
             self.last_target_angle_error
         ], dtype=np.float32)
 
-        if god_view_array.size == 0:
-            god_view_array = np.zeros(7, dtype=np.float32)
-
         # 需要的回合辅助信息
         info = {
             "total_step": self.step_count, "max_continuous_tracking_step": self.max_continuous_tracking_step,
@@ -379,7 +377,7 @@ class TrackingEnv(gym.Env):
             "pos_tracker": self.tracker, "pos_target": self.target, "tracker_angle": self.angle,
             "god_view_info": god_view_array
         }
-
+        
         return next_observation, info
 
     def render(self, mode='human'):
