@@ -5,10 +5,14 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
+from PIL import Image
+import numpy as np
 from torch.utils.tensorboard import SummaryWriter
-from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch
+from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch, Collector
 from tianshou.env import SubprocVectorEnv
 from tianshou.trainer import OnpolicyTrainer
+from tianshou.policy import PPOPolicy
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net, ActorCritic
 from typing import Any, Callable, Dict, List, Optional, Union, Sequence, Tuple
@@ -16,8 +20,7 @@ import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from tscollector import Collector
-from tsppo import PPOPolicy, Actor, Critic
+from tsppo import Actor, Critic
 
 
 def Train():
@@ -45,18 +48,18 @@ def Train():
     np.random.seed(algo_config.seed)
     torch.manual_seed(algo_config.seed)
     train_envs.seed(algo_config.seed)
-    test_envs.seed(algo_config.seed)
+    # test_envs.seed(algo_config.seed)
 
     # 构建网络
     net = Net(
-        algo_config.state_shape,
+        algo_config.state_shape[0]-algo_config.god_view_shape[0],
         algo_config.action_shape,
         hidden_sizes=algo_config.hidden_sizes,
         device=algo_config.device,
         )
 
     net_c = Net(
-        algo_config.state_shape[0] + algo_config.god_view_shape[0],
+        algo_config.state_shape,
         algo_config.action_shape,
         hidden_sizes=algo_config.hidden_sizes,
         device=algo_config.device,
@@ -205,14 +208,13 @@ def Train():
             print("Fail to restore policy and optim.")
         policy.eval()
         collector = Collector(policy, env, exploration_noise=True)
-        collector.collect(n_episode=1, render=1 / 35)
+        collector.collect(n_episode=1, render=1/10)
         return
         
-
     result = OnpolicyTrainer(
             policy=policy,
             train_collector=train_collector,
-            test_collector=test_collector,
+            test_collector=test_collector, 
             max_epoch=algo_config.epoch,
             step_per_epoch=algo_config.step_per_epoch,
             step_per_collect=algo_config.step_per_collect,
@@ -229,4 +231,16 @@ def Train():
             ).run()
 
 if __name__ == "__main__":
-    Train()
+    algo_config.resume = False
+    for stage in range(1,3):
+        if stage<3:
+            algo_config.use_god_view=True
+        else:
+            algo_config.use_god_view=False
+        epoch_nums = [300,600,300,400,500]
+        algo_config.epoch = epoch_nums[stage-1]
+        algo_config.training_stage = stage
+        Train()
+        algo_config.resume = True
+
+

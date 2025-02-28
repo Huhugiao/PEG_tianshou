@@ -46,6 +46,7 @@ def reward_calculate(test, last_target_distance, last_target_angle, continuous_t
         collision_flag = True
         loss_flag = False
         # print ("collision")
+        
 
     # case2: 丢失目标
     elif last_target_distance > task_config.max_detection_distance or \
@@ -227,6 +228,46 @@ def target_nav(tracker, target, move_num, nav_point, static_obstacles, dynamic_o
         nav_point,move_num = utils.generate_nav_point(tracker, target, static_obstacles, dynamic_obstacles, step_count)
     return target,move_num,nav_point
 
+def see_target_nav(tracker, target, move_num, nav_point, static_obstacles, dynamic_obstacles, step_count):
+    # 计算目标受到的合力（引力和斥力）
+    force_x, force_y = utils.calculate_force(target, nav_point, static_obstacles, dynamic_obstacles, a1=60)
+    # 保存目标当前位置
+    now_x = target['x']
+    now_y = target['y']
+    # 随机选择移动模式，主要是基于力的方向，但也引入一定随机性
+    move_mode = np.random.choice(['by_force', 'random'], p=[0.8, 0.2])
+    # 计算预测的位置
+    if move_mode == 'by_force':
+        # 按照合力的方向计算新的位置
+        predicted_x = target['x'] + np.sign(force_x) * task_config.moving_size
+        predicted_y = target['y'] + np.sign(force_y) * task_config.moving_size
+        # 检查新位置是否空闲，如果是，则预测该位置
+        if utils.is_free_space(tracker, static_obstacles, dynamic_obstacles, predicted_x, predicted_y, False, False):
+            predicted_target = {'x': predicted_x, 'y': predicted_y}
+        # 如果新位置不空闲，尝试仅在x或y方向上预测位置
+        elif utils.is_free_space(tracker, static_obstacles, dynamic_obstacles, predicted_x, now_y, False, False):
+            predicted_target = {'x': predicted_x, 'y': now_y}
+        elif utils.is_free_space(tracker, static_obstacles, dynamic_obstacles, now_x, predicted_y, False, False):
+            predicted_target = {'x': now_x, 'y': predicted_y}
+    else:
+        # 引入随机性以尝试突破局部最优
+        for _ in range(100):
+            possible_moves = np.random.randint(0, 8)
+            old_pos = {'x': target['x'], 'y': target['y']}
+            new_pos = utils.move_in_grid(old_pos, possible_moves, task_config.moving_size)
+            if utils.is_free_space(tracker, static_obstacles, dynamic_obstacles, new_pos['x'], new_pos['y'], False, False):
+                predicted_target = {'x': new_pos['x'], 'y': new_pos['y']}
+                break
+    # 如果目标到达导航点，则重新生成导航点
+    if abs(predicted_target['x'] - nav_point['x']) <= task_config.pixel_size and abs(predicted_target['y'] - nav_point['y']) <= task_config.pixel_size:
+        nav_point, move_num = utils.generate_nav_point(tracker, target, static_obstacles, dynamic_obstacles, step_count)
+    # 如果长时间没有到达导航点，则也重新生成导航点
+    if move_num % 20 == 0:
+        nav_point, move_num = utils.generate_nav_point(tracker, target, static_obstacles, dynamic_obstacles, step_count)
+    # 返回预测的目标位置，移动次数，导航点（原值不变）
+    return predicted_target, move_num, nav_point
+
+
 
 def calculate_force(target, nav_point, static_obstacles, dynamic_obstacles, a1):
     """
@@ -375,6 +416,33 @@ def move_clockwise(agent, direction, v):
     agent['y'] = y
     return agent
 
+def see_move_clockwise(agent, direction, v):
+    """
+    同 move_clockwise，但不修改target位置，仅预测
+    """
+    x, y = agent['x'], agent['y']
+    new_x, new_y = x, y  # 初始化新的坐标为原坐标
+
+    if direction == "clockwise":
+        if x < 390 and y == 90:
+            new_x += v
+        elif x == 390 and y < 390:
+            new_y += v
+        elif x > 90 and y == 390:
+            new_x -= v
+        elif x == 90 and y > 90:
+            new_y -= v
+    else:  # counterclockwise
+        if x < 390 and y == 390:
+            new_x += v
+        elif x == 90 and y < 390:
+            new_y += v
+        elif x > 90 and y == 90:
+            new_x -= v
+        elif x == 390 and y > 90:
+            new_y -= v
+
+    return {'x': new_x, 'y': new_y}  # 返回新的位置字典
 
 def check_collision(tracker, target, static_obstacles, dynamic_obstacles):
     """

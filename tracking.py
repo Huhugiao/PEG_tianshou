@@ -5,7 +5,7 @@ import pygame
 import sys
 import time
 from gym.utils import seeding
-import task_config
+import task_config,algo_config
 import utils
 from typing import Optional
 
@@ -57,6 +57,9 @@ class TrackingEnv(gym.Env):
         self.action_space = spaces.Discrete(11)  # 从行驶方向-45度开始沿正方向旋转
         self.observation_space = spaces.Box(low=-1, high=1, shape=(13,), dtype=np.float32) \
               if self.mask_flag else spaces.Box(low=-1, high=1, shape=(18,), dtype=np.float32)
+        if algo_config.use_god_view:
+            self.observation_space = spaces.Box(low=-1, high=1, shape=(13+algo_config.god_view_shape[0],), dtype=np.float32) \
+              if self.mask_flag else spaces.Box(low=-1, high=1, shape=(18+algo_config.god_view_shape[0],), dtype=np.float32)
         # 初始化静态和动态障碍物列表
         self.static_obstacles = []
         self.dynamic_obstacles = []
@@ -180,8 +183,20 @@ class TrackingEnv(gym.Env):
             self.target, self.move_num, self.nav_point = utils.target_nav(self.tracker, self.target, self.move_num,
                                                                           self.nav_point, self.static_obstacles,
                                                                           self.dynamic_obstacles, self.step_count)
+            # temp_target,tempnum,tempnavp = utils.see_target_nav(self.tracker, self.target, self.move_num,
+            #                                                               self.nav_point, self.static_obstacles,
+            #                                                               self.dynamic_obstacles, self.step_count)
+            # target_relative_distance, target_distance_error, target_relative_angle, target_angle_error, tracker_angle \
+            # = utils.get_relative_elements(temp_target, self.tracker, self.angle)
+            # god_view_array = np.clip(np.array([target_relative_distance/task_config.max_detection_distance, 
+            #                     target_relative_angle/task_config.max_detection_angle], dtype=np.float32),-1,1)
         elif self.target_mode == "Fix":
             self.target = utils.move_clockwise(self.target, self.target_move_direction, self.moving_size)
+            target_relative_distance, target_distance_error, target_relative_angle, target_angle_error, tracker_angle = (
+                utils.get_relative_elements(utils.see_move_clockwise(self.target, self.target_move_direction, self.moving_size), self.tracker, self.angle))
+            god_view_array = np.clip(np.array([target_relative_distance/task_config.max_detection_distance, 
+                                target_relative_angle/task_config.max_detection_angle], dtype=np.float32),-1,1)
+            # god_view_array = np.array([1,1])
         elif self.target_mode == "Ram":
             # 向可行域随机移动
             for _ in range(100):
@@ -221,19 +236,9 @@ class TrackingEnv(gym.Env):
         next_observation, self.last_seen_target_distance, self.last_seen_target_angle = utils.get_observation(
             self.last_target_distance, self.last_target_angle, self.last_seen_target_distance,
             self.last_seen_target_angle, self.tracker, self.angle, self.static_obstacles, self.dynamic_obstacles)
-
-        # 上帝视角的额外信息
-        god_view_array = np.array([
-            self.tracker['x'], self.tracker['y'],
-            self.target['x'], self.target['y'],
-            self.angle,
-            self.last_target_distance_error,
-            self.last_target_angle_error
-            ], dtype=np.float32)
-
         
-        if god_view_array.size == 0:
-            god_view_array = np.zeros(7, dtype=np.float32)
+        if algo_config.use_god_view:
+            next_observation = np.hstack((next_observation,god_view_array))
 
         # 需要的回合辅助信息
         info = {
@@ -241,7 +246,6 @@ class TrackingEnv(gym.Env):
             "success_flag": self.success_flag, "loss_flag": self.loss_flag, "collision_flag": self.collision_flag,
             "distance_error": self.last_target_distance_error, "angle_error": self.last_target_angle_error,
             "pos_tracker": self.tracker, "pos_target": self.target, "tracker_angle": self.angle,
-            "god_view_info": god_view_array
         }
         
         return next_observation, reward, terminated, truncated, info
@@ -265,7 +269,7 @@ class TrackingEnv(gym.Env):
         self.dynamic_obstacles = []
         self.nav_point = []
         self.target = {}
-        self.tracker = {}
+        self.tracker = {'x': 0, 'y': 0}
         # 障碍分布类型设置
         if self.target_mode == "Fix":
             # 设置屏蔽区域保证运行通路
@@ -307,7 +311,6 @@ class TrackingEnv(gym.Env):
                 self.nav_point, self.move_num = utils.generate_nav_point(self.tracker, self.target,
                                                                          self.static_obstacles, self.dynamic_obstacles,
                                                                          self.step_count)
-
         # 跟踪器位置初始化
         while True:
             self.tracker = {
@@ -359,15 +362,10 @@ class TrackingEnv(gym.Env):
         next_observation, self.last_seen_target_distance, self.last_seen_target_angle = utils.get_observation(
             self.last_target_distance, self.last_target_angle, self.last_seen_target_distance,
             self.last_seen_target_angle, self.tracker, self.angle, self.static_obstacles, self.dynamic_obstacles)
-
-        # 初始化上帝视角信息
-        god_view_array = np.array([
-            self.tracker['x'], self.tracker['y'],
-            self.target['x'], self.target['y'],
-            self.angle,
-            self.last_target_distance_error,
-            self.last_target_angle_error
-        ], dtype=np.float32)
+        
+        god_view_array = np.array([1, 1], dtype=np.float32)
+        if algo_config.use_god_view:
+            next_observation = np.hstack((next_observation,god_view_array))
 
         # 需要的回合辅助信息
         info = {
@@ -375,7 +373,6 @@ class TrackingEnv(gym.Env):
             "success_flag": self.success_flag, "loss_flag": self.loss_flag, "collision_flag": self.collision_flag,
             "distance_error": self.last_target_distance_error, "angle_error": self.last_target_angle_error,
             "pos_tracker": self.tracker, "pos_target": self.target, "tracker_angle": self.angle,
-            "god_view_info": god_view_array
         }
         
         return next_observation, info
@@ -425,47 +422,3 @@ class TrackingEnv(gym.Env):
             pygame.display.quit()
             pygame.quit()
 
-
-if __name__ == '__main__':
-    '''主函数'''
-    env = gym.make('TrackingEnv-v0', target_mode="Fix", obstacle_mode="None", test_flag=True)
-    # 设置随机数种子
-    # env.seed(1)
-    # 设置总时间步数
-    total_steps = 300
-
-    # 开始测试
-    for episode in range(1):  # 设置测试回合数
-        # 重置环境
-        observation = env.reset()
-        env.render()
-        terminated, truncated = False, False
-
-        # 初始化累计奖励
-        total_reward = 0
-
-        for step in range(total_steps):
-            # 在动作空间中选择一个动作
-            print(step)
-            action = env.action_space.sample()  # 这里仅作为示例，使用随机动作
-            # action = 10
-            env.render()
-            time.sleep(0.1)
-            # 与环境交互
-            observation, reward, terminated, truncated, info = env.step(action)
-            # print(observation,reward,done,info)
-            # print(action)
-            # print("episode：", episode + 1, "step:", step + 1, "info:", info)
-            # 累计奖励
-            total_reward += reward
-
-            # 判断是否达到终止条件
-            if terminated or truncated:
-                env.render()
-                time.sleep(1)
-                print(
-                    f"Episode {episode + 1} finished after {step + 1} steps with total reward {total_reward}because of {info}")
-                break
-
-    env.close()
-    sys.exit()

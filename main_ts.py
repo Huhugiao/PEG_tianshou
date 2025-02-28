@@ -202,7 +202,7 @@ def Train():
             print("Fail to restore policy and optim.")
         policy.eval()
         collector = Collector(policy, env, exploration_noise=True)
-        collector.collect(n_episode=1, render=1 / 35)
+        collector.collect(n_episode=1, render=1 / 25)
         return
 
     print(f"Model is on GPU: {next(policy.parameters()).is_cuda}")

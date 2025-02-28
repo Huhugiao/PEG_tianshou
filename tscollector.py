@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import gym
 import numpy as np
 import torch
+import json
 
 from tianshou.data import (
     Batch,
@@ -125,7 +126,8 @@ class Collector(object):
             obs_next={},
             info={},
             policy={},
-            god_view=np.zeros(7, dtype=np.float32),  # 新增 god_view 字段来存储 godview 信息
+            god_view={},
+            god_view_next={},
         )
         self.reset_env(gym_reset_kwargs)
         if reset_buffer:
@@ -157,8 +159,6 @@ class Collector(object):
                 obs = processed_data.get("obs", obs)
                 info = processed_data.get("info", info)
                 god_view = processed_data.get("god_view", god_view)
-                if god_view.size == 0:
-                    god_view = np.zeros(7, dtype=np.float32)
             self.data.info = info
             self.data.god_view = god_view
         else:
@@ -192,23 +192,24 @@ class Collector(object):
         )
         if returns_info:
             obs_reset, info = rval
-            god_view = [item.get('god_view_info') for item in info if 'god_view_info' in item]
+            god_view_reset = [item.get('god_view_info') for item in info if 'god_view_info' in item]
             if self.preprocess_fn:
                 processed_data = self.preprocess_fn(
                     obs=obs_reset, info=info, env_id=global_ids
                 )
                 obs_reset = processed_data.get("obs", obs_reset)
                 info = processed_data.get("info", info)
-                god_view = processed_data.get("god_view", god_view)
+                god_view = processed_data.get("god_view", god_view_reset)
 
             self.data.info[local_ids] = info
-            self.data.god_view[local_ids] = god_view
+            self.data.god_view[local_ids] = god_view_reset
         else:
             obs_reset = rval
             if self.preprocess_fn:
                 obs_reset = self.preprocess_fn(obs=obs_reset, env_id=global_ids
                                                ).get("obs", obs_reset)
         self.data.obs_next[local_ids] = obs_reset
+        self.data.god_view_next[local_ids] = god_view_reset
 
     def collect(
         self,
@@ -288,7 +289,6 @@ class Collector(object):
             assert len(self.data) == len(ready_env_ids)
             # restore the state: if the last state is None, it won't store
             last_state = self.data.policy.pop("hidden_state", None)
-
             # get the next action
             if random:
                 try:
@@ -306,6 +306,7 @@ class Collector(object):
                         result = self.policy(self.data, last_state)
                 else:
                     result = self.policy(self.data, last_state)
+                
                 # update state / act / policy into self.data
                 policy = result.get("policy", Batch())
                 assert isinstance(policy, Batch)
@@ -339,7 +340,11 @@ class Collector(object):
             else:
                 raise ValueError()
 
-            god_view = [item.get('god_view_info') for item in info if 'god_view_info' in item]
+            
+            god_view_next = [item.get('god_view_info') for item in info if 'god_view_info' in item]
+            # with open("output.txt", "w") as file:
+            #     for item in god_view:
+            #         file.write(str(item) + "\n")
 
             self.data.update(
                 obs_next=obs_next,
@@ -348,7 +353,7 @@ class Collector(object):
                 truncated=truncated,
                 done=done,
                 info=info,
-                god_view=god_view,
+                god_view_next=god_view_next,
             )
             if self.preprocess_fn:
                 self.data.update(
@@ -359,6 +364,7 @@ class Collector(object):
                         info=self.data.info,
                         policy=self.data.policy,
                         env_id=ready_env_ids,
+                        god_view_next=self.data.god_view_next,
                     )
                 )
 
@@ -401,6 +407,7 @@ class Collector(object):
                         self.data = self.data[mask]
 
             self.data.obs = self.data.obs_next
+            self.data.god_view = self.data.god_view_next
 
             if (n_step and step_count >= n_step) or \
                     (n_episode and episode_count >= n_episode):
@@ -423,6 +430,7 @@ class Collector(object):
                 info={},
                 policy={},
                 god_view={},
+                god_view_next={},
             )
             self.reset_env()
 
