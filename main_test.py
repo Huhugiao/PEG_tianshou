@@ -64,6 +64,9 @@ def Train():
         hidden_sizes=algo_config.hidden_sizes,
         device=algo_config.device,
         )
+    
+    if algo_config.use_god_view != True:
+        net_c = net
 
     # 建立Actor-Critic实例
     actor = Actor(
@@ -232,12 +235,8 @@ def Train():
 
 if __name__ == "__main__":
     algo_config.resume = False
-    for stage in range(1,3):
-        if stage<3:
-            algo_config.use_god_view=True
-        else:
-            algo_config.use_god_view=False
-        epoch_nums = [300,600,300,400,500]
+    for stage in range(1,6):
+        epoch_nums = [100,200,300,400,500]
         algo_config.epoch = epoch_nums[stage-1]
         algo_config.training_stage = stage
         Train()

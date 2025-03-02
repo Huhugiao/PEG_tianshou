@@ -629,6 +629,7 @@ def draw_sector(screen, color, tracker, last_tracker_angle, thickness=2):
     pygame.draw.line(screen, color, center, end_pos, thickness)
 
 
+radar_size = 4 # 雷达检测的方向数量
 def get_radar(tracker, angle, static_obstacles, dynamic_obstacles):
     """
     模拟智能体的雷达系统，检测周围环境中的障碍物和边界。
@@ -640,13 +641,15 @@ def get_radar(tracker, angle, static_obstacles, dynamic_obstacles):
     - dynamic_obstacles: 动态障碍物列表，每个障碍物都有'x'和'y'键表示其位置。
 
     返回:
-    - to_avoid: 包含16个方向上障碍物距离的数组，用于表示智能体的雷达检测结果。
+    - to_avoid: 包含radar_size个方向上障碍物距离的数组，用于表示智能体的雷达检测结果。
     """
-    to_avoid = np.ones(16)  # 初始化一个长度为16的数组，每个元素初始化为1，表示探测范围
+    to_avoid = np.ones(radar_size)  # 初始化一个长度为radar_size的数组，每个元素初始化为1，表示探测范围
+    angle_step = 360 / radar_size  # 每个方向的角度间隔
+
     # 对地图边缘的探测
-    for i in range(16):
+    for i in range(radar_size):
         # 计算当前方向的角度（从智能体的视角）
-        angle_rad = math.radians(i * 22.5)  # 每个方向22.5度
+        angle_rad = math.radians(i * angle_step)  # 每个方向angle_step度
         direction_x = math.cos(angle_rad)
         direction_y = math.sin(angle_rad)
 
@@ -677,11 +680,11 @@ def get_radar(tracker, angle, static_obstacles, dynamic_obstacles):
             continue
         # 计算障碍物与智能体的相对角度
         angle = np.degrees(np.arctan2(dy, dx)) % 360
-        base_index = int(angle / 22.5)
+        base_index = int(angle / angle_step)
         base_angle = angle
-        # 将角度映射到16个方向上
-        basement = (base_index + 4) % 16  # 地图坐标系旋转
-        direction_index = (basement - int(base_angle / 22.5)) % 16  # 相对角度
+        # 将角度映射到radar_size个方向上
+        basement = (base_index + int(radar_size / 4)) % radar_size  # 地图坐标系旋转
+        direction_index = (basement - int(base_angle / angle_step)) % radar_size  # 相对角度
         # 更新雷达信息
         to_avoid[direction_index] = min(to_avoid[direction_index], dist / task_config.max_detection_distance)
     return to_avoid

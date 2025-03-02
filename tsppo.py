@@ -73,9 +73,16 @@ class Critic(nn.Module):
         self, obs: Union[np.ndarray, torch.Tensor], **kwargs: Any
     ) -> torch.Tensor:
         """Mapping: s -> V(s)."""
-        # with open("output.txt", "w") as file:
+        # with open("output.txt", "a") as file:
+        #         for item in 'start this\n':
+        #             file.write(str(item))
         #         for item in obs:
         #             file.write(str(item) + "\n")
+        #         for item in 'over\n':
+        #             file.write(str(item))
+        # obs = np.hstack((obs[:, [0, 2]], obs[:, -2:]))
+        if not algo_config.use_god_view:
+            obs = obs[:, :-2]
         logits, _ = self.preprocess(obs, state=kwargs.get("state", None))
         return self.last(logits)
     

@@ -56,10 +56,10 @@ class TrackingEnv(gym.Env):
         # 定义动作空间和观测空间
         self.action_space = spaces.Discrete(11)  # 从行驶方向-45度开始沿正方向旋转
         self.observation_space = spaces.Box(low=-1, high=1, shape=(13,), dtype=np.float32) \
-              if self.mask_flag else spaces.Box(low=-1, high=1, shape=(18,), dtype=np.float32)
+              if self.mask_flag else spaces.Box(low=-1, high=1, shape=(2 + utils.radar_size,), dtype=np.float32)
         if algo_config.use_god_view:
-            self.observation_space = spaces.Box(low=-1, high=1, shape=(13+algo_config.god_view_shape[0],), dtype=np.float32) \
-              if self.mask_flag else spaces.Box(low=-1, high=1, shape=(18+algo_config.god_view_shape[0],), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-1, high=1, shape=(13 + algo_config.god_view_shape[0],), dtype=np.float32) \
+              if self.mask_flag else spaces.Box(low=-1, high=1, shape=(2 + utils.radar_size + algo_config.god_view_shape[0],), dtype=np.float32)
         # 初始化静态和动态障碍物列表
         self.static_obstacles = []
         self.dynamic_obstacles = []
