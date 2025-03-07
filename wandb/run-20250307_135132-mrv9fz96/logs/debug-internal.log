@@ -1,0 +1,8 @@
+{"time":"2025-03-07T13:51:32.193173749+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/wandb/run-20250307_135132-mrv9fz96/logs/debug-core.log"}
+{"time":"2025-03-07T13:51:32.483904524+08:00","level":"INFO","msg":"created new stream","id":"mrv9fz96"}
+{"time":"2025-03-07T13:51:32.483939872+08:00","level":"INFO","msg":"stream: started","id":"mrv9fz96"}
+{"time":"2025-03-07T13:51:32.484007822+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"mrv9fz96"}
+{"time":"2025-03-07T13:51:32.48407402+08:00","level":"INFO","msg":"sender: started","stream_id":"mrv9fz96"}
+{"time":"2025-03-07T13:51:32.48407078+08:00","level":"INFO","msg":"handler: started","stream_id":"mrv9fz96"}
+{"time":"2025-03-07T13:51:34.098169394+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-03-07T13:51:44.193223643+08:00","level":"INFO","msg":"tensorboard: no root directory after 10 seconds, using working directory"}

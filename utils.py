@@ -50,47 +50,25 @@ def reward_calculate(test, last_target_distance, last_target_angle, continuous_t
 
     # case2: 丢失目标
     elif last_target_distance > task_config.max_detection_distance or \
-            abs(last_target_angle) > task_config.max_detection_angle:
-        if test:
-            # 测试模式允许丢失一定长度
-            continuous_tracking_step = 0 # 重置连续跟踪步数
-            loss_step += 1 # 增加丢失目标步数
-            if loss_step > task_config.max_loss_step: # 如果丢失步数超过最大限制
-                reward += task_config.loss_penalty # 扣除丢失目标的惩罚分数
-                truncated = True
-                success_flag = False
-                collision_flag = False
-                loss_flag = True
-            else:
-                reward += -1  # 如果丢失步数未超过最大限制，稍作惩罚
-        else:
-            # 训练时不允许丢失
-            continuous_tracking_step = 0
-            reward += task_config.loss_penalty
-            truncated = True
-            success_flag = False
+        abs(last_target_angle) > task_config.max_detection_angle:
+        continuous_tracking_step = 0 # 重置连续跟踪步数
+        loss_step += 1 # 增加丢失目标步数
+        if loss_step > task_config.max_loss_step: # 如果丢失步数超过最大限制
+            reward += -0.3  # 如果丢失步数未超过最大限制，稍作惩罚
+
+    # case3: 拦截成功
+    elif last_target_distance <= task_config.pixel_size: 
+            reward += task_config.success_reward 
+            terminated = True
+            success_flag = True
             collision_flag = False
-            loss_flag = True
-        # print ("lose the target")
+            loss_flag = False
 
     # 其他情况: 正常跟踪，根据情况分配奖励
     else:
-        # 相关计数器处理
-        continuous_tracking_step += 1 # 增加连续跟踪步数
-        if continuous_tracking_step >= max_continuous_tracking_step: # 更新最大连续跟踪步数
-            max_continuous_tracking_step = continuous_tracking_step
-        loss_step = 0 # 重置丢失目标步数
-        # reward计算
-        step_tracking_reward_distance = - abs(
-            last_target_distance - task_config.best_distance) / task_config.max_detection_distance
-        step_tracking_reward_angle = - abs(last_target_angle) / task_config.max_detection_angle
-        step_tracking_reward = 1 + step_tracking_reward_distance + step_tracking_reward_angle
-        # clip
-        if step_tracking_reward > 1:
-            step_tracking_reward = 1
-        elif step_tracking_reward < -1:
-            step_tracking_reward = -1
-        reward += 10 * step_tracking_reward
+        distance_error = (last_target_distance - task_config.best_distance) / task_config.max_detection_distance
+        angle_error = last_target_angle / task_config.max_detection_angle
+        reward += -0.1 * (distance_error + angle_error)
     return reward, terminated, truncated,success_flag,collision_flag,\
         loss_flag,continuous_tracking_step,loss_step,max_continuous_tracking_step
 
@@ -503,8 +481,8 @@ def get_observation(last_target_distance, last_target_angle, last_seen_target_di
         agl = last_target_angle
     else:
         # 如果目标不在视野内，使用最后看到的状态
-        dist = last_seen_target_distance
-        agl = last_seen_target_angle
+        dist = task_config.max_detection_distance
+        agl = task_config.max_detection_angle if last_target_angle > 0 else -task_config.max_detection_angle
     # 归一化距离和角度
     distance = dist / task_config.max_detection_distance
     angle = agl / task_config.max_detection_angle
@@ -629,7 +607,7 @@ def draw_sector(screen, color, tracker, last_tracker_angle, thickness=2):
     pygame.draw.line(screen, color, center, end_pos, thickness)
 
 
-radar_size = 4 # 雷达检测的方向数量
+radar_size = 8 # 雷达检测的方向数量
 def get_radar(tracker, angle, static_obstacles, dynamic_obstacles):
     """
     模拟智能体的雷达系统，检测周围环境中的障碍物和边界。

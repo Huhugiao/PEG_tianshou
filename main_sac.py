@@ -1,37 +1,30 @@
-import os
-import pickle
-import pprint
+from tianshou.policy import DiscreteSACPolicy
+from tianshou.policy.base import BasePolicy
+from tianshou.trainer import OffpolicyTrainer
+from tsppo import Actor, Critic
+from tianshou.utils.net.common import Net
+from tianshou.env import SubprocVectorEnv
+from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch, Collector
+from tianshou.utils import WandbLogger
+from tianshou.utils import TensorboardLogger
+from torch.utils.tensorboard import SummaryWriter
+import algo_config
 import gym
+import datetime
+import pickle
+import os
+import pprint
+import sys
 import numpy as np
 import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
-from PIL import Image
-from torch.utils.tensorboard import SummaryWriter
-from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch, Collector
-from tianshou.env import SubprocVectorEnv
-from tianshou.trainer import OnpolicyTrainer
-from tianshou.policy import PPOPolicy
-from tianshou.utils import TensorboardLogger
-from tianshou.utils.net.common import Net, ActorCritic
-from typing import Any, Callable, Dict, List, Optional, Union, Sequence, Tuple
-import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from tsppo import Actor, Critic
-
-
-def Train():
+def train_sac():
     env = gym.make(algo_config.task, cl_flag=algo_config.cl_flag,
             target_mode="Fix", obstacle_mode="Dynamic", training_stage=algo_config.training_stage)
     algo_config.state_shape = env.observation_space.shape
     algo_config.action_shape = env.action_space.n
-
-    # 指定奖励上限
-    if algo_config.reward_threshold is None:
-        default_reward_threshold = {"TrackingEnv-v0": 500000}
-        algo_config.reward_threshold = default_reward_threshold.get(algo_config.task, env.spec.reward_threshold)
 
     # 构建训练环境和测试环境
     train_envs = SubprocVectorEnv(
@@ -64,48 +57,33 @@ def Train():
         device=algo_config.device,
         )
     
-    if algo_config.use_god_view != True:
-        net_c = net
-
-    # 建立Actor-Critic实例
     actor = Actor(
         net,
         algo_config.action_shape,
         device=algo_config.device,
         )
-    critic = Critic(
-        net_c,  
-        device=algo_config.device,
-        )
-    actor_critic = ActorCritic(actor, critic).to(algo_config.device)
+    actor = Actor(net, algo_config.action_shape, device=algo_config.device, softmax_output=False)
+    actor_optim = torch.optim.Adam(actor.parameters(), lr=algo_config.lr)
+    critic1 = Critic(net, last_size=algo_config.action_shape, device=algo_config.device)
+    critic1_optim = torch.optim.Adam(critic1.parameters(), lr=algo_config.lr)
+    critic2 = Critic(net, last_size=algo_config.action_shape, device=algo_config.device)
+    critic2_optim = torch.optim.Adam(critic2.parameters(), lr=algo_config.lr)
 
-    # 正交初始化
-    for m in actor_critic.modules():
-        if isinstance(m, torch.nn.Linear):
-            torch.nn.init.orthogonal_(m.weight)
-            torch.nn.init.zeros_(m.bias)
-    # 优化器
-    optim = torch.optim.Adam(actor_critic.parameters(), lr=algo_config.lr)
-    dist = torch.distributions.Categorical
-    # 策略
-    policy = PPOPolicy(
-        actor,
-        critic,
-        optim,
-        dist,
-        discount_factor=algo_config.gamma,
-        max_grad_norm=algo_config.max_grad_norm,
-        eps_clip=algo_config.eps_clip,
-        vf_coef=algo_config.vf_coef,
-        ent_coef=algo_config.ent_coef,
-        gae_lambda=algo_config.gae_lambda,
-        reward_normalization=algo_config.reward_normalization,
-        dual_clip=algo_config.dual_clip,
-        value_clip=algo_config.value_clip,
-        advantage_normalization=algo_config.norm_adv,
-        recompute_advantage=algo_config.recompute_adv,
+    # define policy
+    # if algo_config.auto_alpha:
+    #     target_entropy = 0.98 * np.log(np.prod(algo_config.action_shape))
+    #     log_alpha = torch.zeros(1, requires_grad=True, device=algo_config.device)
+    #     alpha_optim = torch.optim.Adam([log_alpha], lr=algo_config.lr)
+    #     algo_config.alpha = (target_entropy, log_alpha, alpha_optim)
+
+    policy = DiscreteSACPolicy(
+        actor=actor,
+        actor_optim=actor_optim,
+        critic1=critic1,
+        critic1_optim=critic1_optim,
+        critic2=critic2,
+        critic2_optim=critic2_optim,
         action_space=env.action_space,
-        deterministic_eval=False,
     ).to(algo_config.device)
 
     # buffer
@@ -130,8 +108,15 @@ def Train():
 
     # 设置数据存储路径
     log_path = os.path.join(algo_config.logdir)
-    writer = SummaryWriter(log_path)
-    logger = TensorboardLogger(writer, save_interval=algo_config.save_interval)
+    # writer = SummaryWriter(log_path)
+    # logger = TensorboardLogger(writer, save_interval=algo_config.save_interval)
+
+    logger = WandbLogger(
+    save_interval=algo_config.save_interval,
+    name="your_experiment_name",  # 实验名称
+    project="your_project_name",  # 项目名称
+    )
+    logger.load(SummaryWriter(log_path))
 
     # 存储最优记录
     def save_best_fn(policy):
@@ -150,7 +135,6 @@ def Train():
         torch.save(
             {
                 "model": policy.state_dict(),
-                "optim": optim.state_dict(),
             },
             ckpt_path,
         )
@@ -179,10 +163,8 @@ def Train():
         else:
             print("Fail to restore buffer.")
 
-    # 观察一次智能体仿真（如果有设置）\
-    watch_agent = 1
-    if watch_agent:
-        np.random.seed(None)
+    # 观察一次智能体仿真（如果有设置）
+    if algo_config.watch_agent:
         print(f"Loading agent under {log_path}")
         ckpt_path = os.path.join(log_path, "checkpoint.pth")
         if os.path.exists(ckpt_path):
@@ -194,27 +176,28 @@ def Train():
             print("Fail to restore policy and optim.")
         policy.eval()
         collector = Collector(policy, env, exploration_noise=True)
-        collector.collect(n_episode=1, render=1/24)
-        input("Press Enter to exit...")
+        collector.collect(n_episode=1, render=1/10)
         return
-        
-    result = OnpolicyTrainer(
-            policy=policy,
-            train_collector=train_collector,
-            test_collector=test_collector, 
-            max_epoch=algo_config.epoch,
-            step_per_epoch=algo_config.step_per_epoch,
-            step_per_collect=algo_config.step_per_collect,
-            repeat_per_collect=algo_config.repeat_per_collect,
-            episode_per_test=algo_config.test_num,
-            batch_size=algo_config.batch_size,
-            update_per_step=algo_config.update_per_step,
-            stop_fn=stop_fn,
-            save_best_fn=save_best_fn,
-            logger=logger,
-            resume_from_log=algo_config.resume,
-            save_checkpoint_fn=save_checkpoint_fn,
-            ).run()
+
+    result = OffpolicyTrainer(
+        policy=policy,
+        train_collector=train_collector,
+        test_collector=test_collector,
+        max_epoch=algo_config.epoch,
+        step_per_epoch=algo_config.step_per_epoch,
+        step_per_collect=algo_config.step_per_collect,
+        episode_per_test=algo_config.test_num,
+        batch_size=algo_config.batch_size,
+        stop_fn=stop_fn,
+        save_best_fn=save_best_fn,
+        logger=logger,
+        update_per_step=algo_config.update_per_step,
+        test_in_train=False,
+        save_checkpoint_fn=save_checkpoint_fn,
+    ).run()
+
+    pprint.pprint(result)
+
 
 if __name__ == "__main__":
     # algo_config.resume = False
@@ -224,6 +207,5 @@ if __name__ == "__main__":
     #     algo_config.training_stage = stage
     #     Train()
     #     algo_config.resume = True
-    Train()
-
+    train_sac()
 

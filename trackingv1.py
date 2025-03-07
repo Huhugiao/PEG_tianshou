@@ -69,7 +69,7 @@ class TrackingEnv(gym.Env):
         self.max_detection_angle = task_config.max_detection_angle
         self.best_angle = task_config.best_angle
         # 设置测试模式和课程学习模式的标志
-        self.test_flag = test_flag  # 测试模式：指定目标和障碍，有限步长；普通训练模式：指定目标和障碍，无限步长
+        self.test_flag = task_config.test_flag  # 测试模式：指定目标和障碍，有限步长；普通训练模式：指定目标和障碍，无限步长
         self.cl_flag = cl_flag  # 课程学习模式：已有目标和障碍设置，无固定步长
         self.training_stage = training_stage  # 课程学习模式下定义
 
@@ -169,7 +169,7 @@ class TrackingEnv(gym.Env):
 
         # 测试模式限制算法运行长度
         if self.test_flag and self.step_count >= self.total_steps:
-            self.success_flag = True
+            self.loss_flag = True
 
         # 计算奖励
         (reward, terminated, truncated, self.success_flag, self.collision_flag, self.loss_flag,
@@ -312,15 +312,16 @@ class TrackingEnv(gym.Env):
                                                                          self.static_obstacles, self.dynamic_obstacles,
                                                                          self.step_count)
         # 跟踪器位置初始化
-        while True:
-            self.tracker = {
-                'x': self.target['x'] + np.random.randint(-3, 3) * self.pixel_size,
-                'y': self.target['y'] + np.random.randint(-3, 3) * self.pixel_size
-            }
-            if utils.is_free_space(self.tracker, self.static_obstacles, self.dynamic_obstacles, self.tracker['x'],
-                                   self.tracker['y'], is_static=False,
-                                   is_initialize=True) and self.tracker != self.target:
-                break
+        # while True:
+        #     self.tracker = {
+        #         'x': self.target['x'] + np.random.randint(-3, 3) * self.pixel_size,
+        #         'y': self.target['y'] + np.random.randint(-3, 3) * self.pixel_size
+        #     }
+        #     if utils.is_free_space(self.tracker, self.static_obstacles, self.dynamic_obstacles, self.tracker['x'],
+        #                            self.tracker['y'], is_static=False,
+        #                            is_initialize=True) and self.tracker != self.target:
+        #         break
+        self.tracker = np.random.choice([{'x': 240, 'y': 240}])
 
         # 记录初始位置
         self.tracker_trajectory.append(

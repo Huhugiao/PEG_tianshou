@@ -11,9 +11,11 @@ min_obstacle_size = 4  # 最小障碍物尺寸
 max_obstacle_size = 6  # 最大障碍物尺寸
 
 # 掩码标志和惩罚值
+test_flag = False
 mask_flag = False  # 是否使用掩码，布尔值
-collision_penalty = -100  # 碰撞时的惩罚分数
-loss_penalty = -50  # 丢失目标时的惩罚分数
+collision_penalty = -30  # 碰撞时的惩罚分数
+loss_penalty = -30  # 丢失目标时的惩罚分数
+success_reward = 50
 
 # 检测距离和角度的最大值
 max_detection_distance = 50  # 最大检测距离

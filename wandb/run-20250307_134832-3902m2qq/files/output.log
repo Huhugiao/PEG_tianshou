@@ -1,0 +1,16 @@
+Epoch #1: 10240it [00:13, 737.59it/s, env_step=10240, len=423, loss/actor=-0.679, loss/critic1=0.204, loss/critic2=0.207, n/ep=0, n/st=256, rew=-60.50]                  
+Epoch #1: test_reward: -216.808989 ± 0.000000, best_reward: -69.000000 ± 0.000000 in #0
+Traceback (most recent call last):
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/main_sac.py", line 210, in <module>
+    train_sac()
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/main_sac.py", line 182, in train_sac
+    result = OffpolicyTrainer(
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/trainer/base.py", line 440, in run
+    deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/trainer/base.py", line 315, in __next__
+    test_stat, self.stop_fn_flag = self.test_step()
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/trainer/base.py", line 371, in test_step
+    if self.stop_fn and self.stop_fn(self.best_reward):
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/main_sac.py", line 127, in stop_fn
+    return mean_rewards >= algo_config.reward_threshold
+TypeError: '>=' not supported between instances of 'float' and 'NoneType'
