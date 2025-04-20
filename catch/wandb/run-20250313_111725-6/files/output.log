@@ -1,0 +1,30 @@
+Loading agent under performance_test_catch0310
+Successfully restore policy and optim.
+Successfully restore buffer.
+[34m[1mwandb[0m:   1 of 1 files downloaded.
+Epoch #188: 10240it [00:14, 706.58it/s, env_step=1925120, len=29, loss=-0.012, loss/clip=-0.007, loss/ent=0.275, loss/vf=0.010, n/ep=8, n/st=256, rew=18.04]                               
+Epoch #188: test_reward: 18.071877 ± 0.023612, best_reward: 18.071877 ± 0.023612 in #188
+Epoch #189: 10240it [00:14, 687.13it/s, env_step=1935360, len=33, loss=-0.009, loss/clip=-0.009, loss/ent=0.246, loss/vf=0.029, n/ep=9, n/st=256, rew=17.98]                               
+Epoch #189: test_reward: 17.843610 ± 0.024307, best_reward: 18.071877 ± 0.023612 in #188
+Epoch #190: 10240it [00:15, 649.33it/s, env_step=1945600, len=29, loss=-0.015, loss/clip=-0.007, loss/ent=0.269, loss/vf=0.001, n/ep=11, n/st=256, rew=18.04]                              
+Epoch #190: test_reward: 18.093179 ± 0.023107, best_reward: 18.093179 ± 0.023107 in #190
+Epoch #191: 10240it [00:16, 628.30it/s, env_step=1955840, len=29, loss=-0.017, loss/clip=-0.010, loss/ent=0.223, loss/vf=0.001, n/ep=6, n/st=256, rew=18.06]                               
+Epoch #191: test_reward: 18.113268 ± 0.028296, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #192: 10240it [00:16, 627.16it/s, env_step=1966080, len=29, loss=-0.015, loss/clip=-0.008, loss/ent=0.237, loss/vf=0.000, n/ep=13, n/st=256, rew=18.12]                              
+Epoch #192: test_reward: 18.021239 ± 0.018209, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #193: 10240it [00:17, 596.59it/s, env_step=1976320, len=29, loss=-0.011, loss/clip=-0.006, loss/ent=0.178, loss/vf=0.001, n/ep=4, n/st=256, rew=18.08]                               
+Epoch #193: test_reward: 18.064304 ± 0.093746, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #194: 10240it [00:18, 553.83it/s, env_step=1986560, len=34, loss=-0.009, loss/clip=-0.008, loss/ent=0.227, loss/vf=0.025, n/ep=6, n/st=256, rew=17.80]                               
+Epoch #194: test_reward: 17.908292 ± 0.038404, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #195: 10240it [00:19, 531.58it/s, env_step=1996800, len=29, loss=-0.012, loss/clip=-0.006, loss/ent=0.226, loss/vf=0.000, n/ep=7, n/st=256, rew=17.97]                               
+Epoch #195: test_reward: 17.880958 ± 0.127916, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #196: 10240it [00:20, 492.29it/s, env_step=2007040, len=29, loss=-0.013, loss/clip=-0.007, loss/ent=0.204, loss/vf=0.000, n/ep=6, n/st=256, rew=18.00]                               
+Epoch #196: test_reward: 18.001400 ± 0.040806, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #197: 10240it [00:21, 486.75it/s, env_step=2017280, len=29, loss=-0.014, loss/clip=-0.007, loss/ent=0.232, loss/vf=0.000, n/ep=7, n/st=256, rew=18.03]                               
+Epoch #197: test_reward: 18.003977 ± 0.112135, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #198: 10240it [00:22, 464.51it/s, env_step=2027520, len=29, loss=-0.012, loss/clip=-0.006, loss/ent=0.210, loss/vf=0.000, n/ep=6, n/st=256, rew=18.01]                               
+Epoch #198: test_reward: 17.940131 ± 0.057997, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #199: 10240it [00:22, 449.03it/s, env_step=2037760, len=29, loss=-0.011, loss/clip=-0.006, loss/ent=0.171, loss/vf=0.000, n/ep=5, n/st=256, rew=18.03]                               
+Epoch #199: test_reward: 18.017254 ± 0.053183, best_reward: 18.113268 ± 0.028296 in #191
+Epoch #200: 10240it [00:24, 422.63it/s, env_step=2048000, len=29, loss=-0.014, loss/clip=-0.007, loss/ent=0.230, loss/vf=0.001, n/ep=10, n/st=256, rew=18.03]                              
+Epoch #200: test_reward: 17.995359 ± 0.040135, best_reward: 18.113268 ± 0.028296 in #191
