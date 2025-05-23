@@ -1,7 +1,0 @@
-Epoch #1: 10240it [00:12, 825.30it/s, env_step=10240, len=157, loss=0.106, loss/clip=-0.002, loss/ent=3.144, loss/vf=0.554, n/ep=0, n/st=256, rew=-77.80] 
-Epoch #1: test_reward: -61.157050 ± 36.950151, best_reward: -61.157050 ± 36.950151 in #1
-Epoch #2: 10240it [00:10, 992.53it/s, env_step=20480, len=148, loss=0.097, loss/clip=-0.006, loss/ent=2.816, loss/vf=0.522, n/ep=3, n/st=256, rew=-71.79] 
-Epoch #2: test_reward: -73.317355 ± 7.171590, best_reward: -61.157050 ± 36.950151 in #1
-tracker requires_grad=True, has non-zero gradients=True
-target requires_grad=True, has non-zero gradients=False
-Training target policy with epoch 2

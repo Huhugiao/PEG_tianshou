@@ -1,7 +1,0 @@
-{"time":"2025-04-24T20:58:15.548038415+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/wandb/run-20250424_205815-1_tracker/logs/debug-core.log"}
-{"time":"2025-04-24T20:58:16.00653244+08:00","level":"INFO","msg":"created new stream","id":"1_tracker"}
-{"time":"2025-04-24T20:58:16.006570634+08:00","level":"INFO","msg":"stream: started","id":"1_tracker"}
-{"time":"2025-04-24T20:58:16.006668343+08:00","level":"INFO","msg":"sender: started","stream_id":"1_tracker"}
-{"time":"2025-04-24T20:58:16.006663209+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"1_tracker"}
-{"time":"2025-04-24T20:58:16.006672426+08:00","level":"INFO","msg":"handler: started","stream_id":"1_tracker"}
-{"time":"2025-04-24T20:58:21.236985324+08:00","level":"INFO","msg":"Starting system monitor"}
