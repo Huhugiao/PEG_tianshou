@@ -1,0 +1,3 @@
+Loading agent under protect_vs_invade
+[34m[1mwandb[0m:   1 of 1 files downloaded.
+Epoch #20:  87%|#####################################4     | 8704/10000 [00:08<00:01, 1204.75it/s, env_step=203008, len=383, loss=0.180, loss/clip=-0.013, loss/ent=1.327, loss/vf=0.825, n/ep=0, n/st=256, rew=-100.64]

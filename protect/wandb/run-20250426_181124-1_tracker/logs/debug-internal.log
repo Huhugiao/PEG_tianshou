@@ -1,0 +1,17 @@
+{"time":"2025-04-26T18:11:24.112665853+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/wandb/run-20250426_181124-1_tracker/logs/debug-core.log"}
+{"time":"2025-04-26T18:11:24.823092048+08:00","level":"INFO","msg":"created new stream","id":"1_tracker"}
+{"time":"2025-04-26T18:11:24.823129651+08:00","level":"INFO","msg":"stream: started","id":"1_tracker"}
+{"time":"2025-04-26T18:11:24.823205367+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:24.823245856+08:00","level":"INFO","msg":"handler: started","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:24.823295572+08:00","level":"INFO","msg":"sender: started","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:28.412382238+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-26T18:11:32.978028922+08:00","level":"WARN","msg":"sender: sendUseArtifact: job builder disabled, skipping"}
+{"time":"2025-04-26T18:11:52.978570844+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-26T18:11:52.979050258+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-26T18:11:53.980209403+08:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading config.yaml","runtime_seconds":0.184627592,"progress":"590B/590B"}],"total_operations":1}}
+{"time":"2025-04-26T18:11:54.358426561+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-26T18:11:55.669011739+08:00","level":"INFO","msg":"stream: closing","id":"1_tracker"}
+{"time":"2025-04-26T18:11:55.66902758+08:00","level":"INFO","msg":"handler: closed","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:55.669033612+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:55.669052828+08:00","level":"INFO","msg":"sender: closed","stream_id":"1_tracker"}
+{"time":"2025-04-26T18:11:55.669096524+08:00","level":"INFO","msg":"stream: closed","id":"1_tracker"}

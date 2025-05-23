@@ -1,0 +1,18 @@
+{"time":"2025-04-24T21:14:15.561423826+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/wandb/run-20250424_211415-2_tracker/logs/debug-core.log"}
+{"time":"2025-04-24T21:14:15.933380615+08:00","level":"INFO","msg":"created new stream","id":"2_tracker"}
+{"time":"2025-04-24T21:14:15.93342466+08:00","level":"INFO","msg":"stream: started","id":"2_tracker"}
+{"time":"2025-04-24T21:14:15.933468249+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:14:15.933501805+08:00","level":"INFO","msg":"handler: started","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:14:15.933570027+08:00","level":"INFO","msg":"sender: started","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:14:17.756953314+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-24T21:14:44.31264142+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/huhugiao-bit/protect_vs_invade/2_tracker/file_stream\": EOF"}
+{"time":"2025-04-24T21:15:01.345895301+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-24T21:15:01.34652372+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-24T21:15:02.347630445+08:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading artifact run_2_tracker_checkpoint","runtime_seconds":1.542491965,"subtasks":[{"desc":"checkpoint.pth","runtime_seconds":0.007291413,"progress":"704.0KB/1.0MB"}]},{"desc":"uploading config.yaml","runtime_seconds":0.210024017,"progress":"549B/549B"}],"total_operations":2}}
+{"time":"2025-04-24T21:15:06.703602217+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-24T21:15:14.320203176+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/huhugiao-bit/protect_vs_invade/2_tracker/file_stream\": EOF"}
+{"time":"2025-04-24T21:15:20.108688652+08:00","level":"INFO","msg":"stream: closing","id":"2_tracker"}
+{"time":"2025-04-24T21:15:20.108706526+08:00","level":"INFO","msg":"handler: closed","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:15:20.108713109+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:15:20.108734616+08:00","level":"INFO","msg":"sender: closed","stream_id":"2_tracker"}
+{"time":"2025-04-24T21:15:20.108766904+08:00","level":"INFO","msg":"stream: closed","id":"2_tracker"}

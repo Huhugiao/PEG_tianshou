@@ -1,0 +1,40 @@
+{
+  "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.17",
+  "python": "CPython 3.8.20",
+  "startedAt": "2025-04-22T07:50:09.829391Z",
+  "program": "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py",
+  "codePath": "protect/main.py",
+  "git": {
+    "commit": "53a8bf6077109434b3da2dc007b1913306c92193"
+  },
+  "email": "1127770847@qq.com",
+  "root": "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect",
+  "host": "DESKTOP-NQKK42E",
+  "executable": "/home/ace/miniconda3/envs/lnenv/bin/python",
+  "codePathLocal": "main.py",
+  "cpu_count": 8,
+  "cpu_count_logical": 16,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "269427478528",
+      "used": "25183072256"
+    }
+  },
+  "memory": {
+    "total": "7902412800"
+  },
+  "cpu": {
+    "count": 8,
+    "countLogical": 16
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "memoryTotal": "8585740288",
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.8"
+}

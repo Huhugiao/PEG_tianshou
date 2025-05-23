@@ -1,0 +1,11 @@
+Epoch #1: 10240it [00:10, 976.84it/s, env_step=10240, len=142, loss=0.012, loss/clip=-0.009, loss/ent=2.994, loss/vf=0.203, n/ep=5, n/st=256, rew=-104.03]                                                       
+Epoch #1: test_reward: -117.573030 ± 14.619793, best_reward: -113.748918 ± 49.325976 in #0
+Epoch #2: 10240it [00:08, 1222.20it/s, env_step=20480, len=111, loss=-0.038, loss/clip=-0.011, loss/ent=2.783, loss/vf=0.003, n/ep=1, n/st=256, rew=-104.72]                                                     
+Epoch #2: test_reward: -139.274187 ± 20.603531, best_reward: -113.748918 ± 49.325976 in #0
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 4
+Loading agent under protect_vs_invade_adjusting_21/policy_b
+Fail to restore policy and optimizer.
+[34m[1mwandb[0m:   1 of 1 files downloaded.
+Epoch #2: 10240it [00:09, 1080.30it/s, env_step=20480, len=470, loss=-0.033, loss/clip=-0.006, loss/ent=2.931, loss/vf=0.010, n/ep=0, n/st=256, rew=28.17]                                                       

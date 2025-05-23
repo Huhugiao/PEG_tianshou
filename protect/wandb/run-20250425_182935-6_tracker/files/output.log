@@ -1,0 +1,3 @@
+Epoch #1: 10240it [00:08, 1192.43it/s, env_step=10240, len=153, loss=0.254, loss/clip=-0.004, loss/ent=2.923, loss/vf=1.148, n/ep=3, n/st=256, rew=-72.89]                                                              
+Epoch #1: test_reward: -74.520218 ± 8.795034, best_reward: -71.668603 ± 7.038419 in #0
+Epoch #2:  84%|#######################################7       | 8448/10000 [00:06<00:01, 1367.77it/s, env_step=18688, len=92, loss=0.110, loss/clip=-0.006, loss/ent=2.529, loss/vf=0.565, n/ep=1, n/st=256, rew=-61.34]

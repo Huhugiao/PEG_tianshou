@@ -1,0 +1,17 @@
+Epoch #1: 10240it [00:10, 953.87it/s, env_step=10240, len=143, loss=-0.014, loss/clip=-0.009, loss/ent=3.057, loss/vf=0.103, n/ep=5, n/st=256, rew=-108.84] 
+Epoch #1: test_reward: -121.562909 ± 4.352652, best_reward: -119.306046 ± 21.349000 in #0
+Epoch #2: 10240it [00:07, 1360.07it/s, env_step=20480, len=321, loss=-0.035, loss/clip=-0.010, loss/ent=2.552, loss/vf=0.002, n/ep=1, n/st=256, rew=-229.64]
+Epoch #2: test_reward: -113.349371 ± 49.181979, best_reward: -113.349371 ± 49.181979 in #2
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 4
+Traceback (most recent call last):
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 178, in <module>
+    alt_train()
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 173, in alt_train
+    train(active_policy=active_policy)
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 73, in train
+    wandb.tensorboard.patch(root_logdir=root_log)
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/wandb/integration/tensorboard/monkeypatch.py", line 32, in patch
+    raise ValueError(
+ValueError: Tensorboard already patched. Call `wandb.tensorboard.unpatch()` first; remove `sync_tensorboard=True` from `wandb.init`; or only call `wandb.tensorboard.patch` once.

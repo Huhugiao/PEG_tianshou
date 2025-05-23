@@ -1,0 +1,11 @@
+Epoch #1: 10240it [00:10, 951.03it/s, env_step=10240, len=186, loss=0.156, loss/clip=-0.002, loss/ent=3.160, loss/vf=0.758, n/ep=4, n/st=256, rew=-79.73] 
+Epoch #1: test_reward: -75.623779 ± 11.104377, best_reward: -71.009927 ± 11.862518 in #0
+Epoch #2: 10240it [00:08, 1145.68it/s, env_step=20480, len=97, loss=0.151, loss/clip=-0.003, loss/ent=3.083, loss/vf=0.740, n/ep=1, n/st=256, rew=-66.37]
+Epoch #2: test_reward: -67.285959 ± 4.228147, best_reward: -67.285959 ± 4.228147 in #2
+Epoch #3: 10240it [00:08, 1184.60it/s, env_step=30720, len=92, loss=0.163, loss/clip=-0.001, loss/ent=3.158, loss/vf=0.782, n/ep=2, n/st=256, rew=-10.79] 
+Epoch #3: test_reward: -67.090355 ± 2.080802, best_reward: -67.090355 ± 2.080802 in #3
+Epoch #4: 10240it [00:07, 1320.26it/s, env_step=40960, len=238, loss=0.078, loss/clip=-0.003, loss/ent=3.047, loss/vf=0.447, n/ep=1, n/st=256, rew=-93.74]
+Epoch #4: test_reward: -74.505386 ± 10.391960, best_reward: -67.090355 ± 2.080802 in #3
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 4

@@ -26,22 +26,21 @@ def reward_calculate(tracker, target, base):
 
     # Termination conditions
     if current_base_distance <= task_config.pixel_size:  # Target reaches base
-        reward = -20  # Tracker penalty
+        reward = -50  # Tracker penalty
         terminated = True
         info['reason'] = 'Attacker reached the base'
     elif current_target_distance <= task_config.pixel_size:  # Tracker catches target
-        reward = 20  # Tracker reward
+        reward = 50  # Tracker reward
         terminated = True
         info['reason'] = 'Defender intercepted the attacker'
     else:
         # Distance-based components (normalized 0-1)
-        track_reward = 0.7 * (1 - norm_target)  # Closer to target -> higher reward
-        base_penalty = 0.7 * (1 - norm_base)    # Closer to base -> higher penalty
+        track_reward = 0.6 * (1 - norm_target)  # Closer to target -> higher reward
+        base_penalty = 1 * (1 - norm_base)    # Closer to base -> higher penalty
         reward = track_reward - base_penalty
-        reward += 0.3
     if algo_config.mission == 1:
         reward = -reward
-    
+    reward -= 0.2
     return reward, terminated, truncated, info
 
 
@@ -77,22 +76,51 @@ def get_canvas(target, tracker, base, tracker_trajectory, target_trajectory):
 
 
 def agent_move(agent, action, moving_size):
-    # 动作对应的角度变化（24个方向，每个方向间隔15度）
-    angle_changes = np.array([i * 15 for i in range(24)])  # 0度到345度，间隔15度
-    alpha = angle_changes[action]
-    new_angle = alpha % 360  # 更新智能体的全局朝向角度
+    """
+    根据组合动作更新智能体的位置。
     
-    # 根据角度和距离计算新位置
-    d = moving_size
-    new_pos = {
-        'x': agent['x'] + d * np.cos(np.deg2rad(new_angle)),
-        'y': agent['y'] + d * np.sin(np.deg2rad(new_angle))
-    }
+    参数:
+    - agent: 包含智能体位置和朝向信息的字典
+    - action: 整数组合动作，取值范围0~47，其中：
+              angle_index = action // 3 对应相对角度（单位：度），从 -45 到 45 离散取值
+              speed_index = action % 3 对应速度选择：
+                  0 -> 静止（0）
+                  1 -> 半速（moving_size/2）
+                  2 -> 全速（moving_size）
+    - moving_size: 全速时的移动步长
     
-    # 添加边界约束
-    new_pos['x'] = np.clip(new_pos['x'], 0, task_config.width - task_config.pixel_size)
-    new_pos['y'] = np.clip(new_pos['y'], 0, task_config.height - task_config.pixel_size)
-    return new_pos
+    返回:
+    - 更新后的智能体字典
+    """
+    # 解码动作: 重新调整为先选角度后选速度
+    angle_index = action // 3
+    speed_index = action % 3
+
+    # 根据速度索引确定实际速度
+    if speed_index == 0:
+        speed = 0
+    elif speed_index == 1:
+        speed = moving_size / 2
+    else:
+        speed = moving_size
+
+    # 离散角度列表：16个从 -45 到 45 度的值
+    angle_offsets = np.linspace(-45, 45, 16)
+    angle_offset = angle_offsets[angle_index]
+
+    # 计算新的朝向（当前朝向加上角度偏移），确保结果在 0-360 度之间
+    current_angle = agent.get('theta', 0)
+    new_angle = (current_angle + angle_offset) % 360
+    agent['theta'] = new_angle
+
+    # 根据新的朝向和速度更新位置
+    new_x = agent['x'] + speed * np.cos(np.deg2rad(new_angle))
+    new_y = agent['y'] + speed * np.sin(np.deg2rad(new_angle))
+    
+    agent['x'] = np.clip(new_x, 0, task_config.width - task_config.pixel_size)
+    agent['y'] = np.clip(new_y, 0, task_config.height - task_config.pixel_size)
+    
+    return agent
 
 
 
@@ -101,17 +129,18 @@ def target_nav(target, tracker, base, moving_size, frame_count):
     改进的连续逃逸导航策略，基于距离动态调整躲避强度，调整横向偏移频率并保持恒定速度。
 
     参数:
-    - target: 当前目标的位置，字典 {'x': float, 'y': float}
-    - tracker: 当前追踪者的位置，字典 {'x': float, 'y': float}
-    - base: 基地位置，字典 {'x': float, 'y': float}
+    - target: 当前目标的位置字典，包含{'x': float, 'y': float}，可选'theta'
+    - tracker: 当前追踪者的位置字典
+    - base: 基地位置字典
     - moving_size: 移动步长
     - frame_count: 帧计数器（用于周期机动）
 
     返回:
-    - new_target_pos: 新位置字典
+    - new_pos: 新位置字典（增加'theta'字段，表示新的朝向）
     - distance_to_tracker: 与追踪者的距离
     - distance_to_base: 与基地的距离
-    - frame_count: 更新后的帧计数器
+    - new_frame_count: 更新后的帧计数器
+    - new_theta: 目标新的朝向（角度，单位：度）
     """
     # 计算相对向量和距离
     tracker_vec = np.array([tracker['x'] - target['x'], tracker['y'] - target['y']])
@@ -135,33 +164,38 @@ def target_nav(target, tracker, base, moving_size, frame_count):
     if np.linalg.norm(tracker_vec) > 1e-5:
         tracker_dir = tracker_vec / np.linalg.norm(tracker_vec)
         lateral_dir = np.array([-tracker_dir[1], tracker_dir[0]])  # 逆时针垂直方向
-        # 增加切换间隔（每31帧切换方向）
-        lateral_dir *= np.sign(math.sin(frame_count * 0.1))  # 0.1对应约62.8帧周期
+        lateral_dir *= np.sign(math.sin(frame_count * 0.1))
     else:
         lateral_dir = np.zeros(2)
 
     # 方向合成：基础方向 + 动态横向躲避
     move_dir = (base_dir + lateral_dir * distance_scale * 2.5)
     
-    # 当距离非常近时增强躲避
     if distance_to_tracker < 50:
         move_dir += lateral_dir * 1.5
     
-    # 方向归一化和恒定速度
+    # 归一化方向并设置恒定速度
     norm = np.linalg.norm(move_dir)
     if norm > 1e-5:
         move_dir = move_dir / norm
     else:
-        move_dir = base_dir  # 退化为向基地移动
+        move_dir = base_dir
 
-    # 应用移动（保持恒定速度）
     new_pos = target.copy()
-    new_pos['x'] += move_dir[0] * moving_size  # 移除动态速度调整
+    new_pos['x'] += move_dir[0] * moving_size
     new_pos['y'] += move_dir[1] * moving_size
 
     # 边界约束
     new_pos['x'] = np.clip(new_pos['x'], 0, task_config.width - task_config.pixel_size)
     new_pos['y'] = np.clip(new_pos['y'], 0, task_config.height - task_config.pixel_size)
 
-    return new_pos, distance_to_tracker, distance_to_base, frame_count + 1
+    # 根据移动方向计算新的朝向，转换为角度（确保在 0-360 范围内）
+    if norm > 1e-5:
+        new_theta = math.degrees(math.atan2(move_dir[1], move_dir[0])) % 360
+    else:
+        new_theta = target.get('theta', 0)
+
+    new_pos['theta'] = new_theta
+
+    return new_pos, distance_to_tracker, distance_to_base, frame_count + 1, new_theta
 

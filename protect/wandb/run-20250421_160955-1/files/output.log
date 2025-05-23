@@ -1,0 +1,19 @@
+Epoch #1: 10240it [00:10, 964.13it/s, env_step=10240, len=185, loss=0.216, loss/clip=-0.006, loss/ent=3.027, loss/vf=1.009, n/ep=3, n/st=256, rew=-82.15] 
+Traceback (most recent call last):
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 250, in <module>
+    alt_train()
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 242, in alt_train
+    train(active_policy=active_policy)
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/main.py", line 195, in train
+    result = OnpolicyTrainer(
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/trainer/base.py", line 440, in run
+    deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/trainer/base.py", line 310, in __next__
+    self.logger.save_data(
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/utils/logger/wandb.py", line 124, in save_data
+    checkpoint_artifact.add_file(str(checkpoint_path))
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/wandb/sdk/artifacts/_validators.py", line 115, in wrapper
+    return method(self, *args, **kwargs)
+  File "/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/wandb/sdk/artifacts/artifact.py", line 1322, in add_file
+    raise ValueError(f"Path is not a file: {local_path!r}")
+ValueError: Path is not a file: 'None'

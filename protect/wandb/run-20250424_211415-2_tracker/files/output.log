@@ -1,0 +1,13 @@
+Epoch #1: 10240it [00:08, 1164.93it/s, env_step=10240, len=126, loss=0.099, loss/clip=-0.001, loss/ent=3.175, loss/vf=0.528, n/ep=2, n/st=256, rew=-68.35]
+Epoch #1: test_reward: -66.776590 ± 3.608236, best_reward: -66.776590 ± 3.608236 in #1
+Epoch #2: 10240it [00:06, 1477.69it/s, env_step=20480, len=155, loss=0.068, loss/clip=-0.004, loss/ent=3.115, loss/vf=0.413, n/ep=2, n/st=256, rew=-24.42]
+Epoch #2: test_reward: -76.315606 ± 6.888691, best_reward: -66.776590 ± 3.608236 in #1
+Epoch #3: 10240it [00:06, 1548.44it/s, env_step=30720, len=92, loss=0.068, loss/clip=-0.004, loss/ent=2.930, loss/vf=0.403, n/ep=3, n/st=256, rew=-62.04] 
+Epoch #3: test_reward: -59.825632 ± 34.512808, best_reward: -59.825632 ± 34.512808 in #3
+Epoch #4: 10240it [00:07, 1452.90it/s, env_step=40960, len=113, loss=0.072, loss/clip=-0.003, loss/ent=3.004, loss/vf=0.419, n/ep=3, n/st=256, rew=-66.84]              
+Epoch #4: test_reward: -69.447219 ± 6.623213, best_reward: -59.825632 ± 34.512808 in #3
+Epoch #5: 10240it [00:06, 1534.40it/s, env_step=51200, len=200, loss=0.118, loss/clip=-0.003, loss/ent=2.807, loss/vf=0.595, n/ep=2, n/st=256, rew=-79.36]              
+Epoch #5: test_reward: -60.178391 ± 36.498970, best_reward: -59.825632 ± 34.512808 in #3
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 10

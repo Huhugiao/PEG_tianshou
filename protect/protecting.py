@@ -4,11 +4,11 @@ import numpy as np
 import pygame
 import sys
 import time
-from gym.utils import seeding
 from gym import spaces
 import task_config,algo_config
 import utils
 from typing import Optional
+from gym.spaces import MultiDiscrete
 
 class TrackingEnv(gym.Env):
     """
@@ -31,8 +31,6 @@ class TrackingEnv(gym.Env):
         self.width = task_config.width
         self.height = task_config.height
         self.pixel_size = task_config.pixel_size
-        # 定义动作空间
-        self.action_space = spaces.Discrete(24)
         self.target_speed = task_config.target_speed
         self.tracker_speed = task_config.tracker_speed 
         # 初始化窗口和时钟（用于渲染和计时）
@@ -60,6 +58,9 @@ class TrackingEnv(gym.Env):
             dtype=np.float32
         )
         
+        # 定义动作空间
+        self.action_space = spaces.Discrete(48)
+
         # 添加LSTM需要的时序缓存（在训练时处理，环境不维护）
         self.current_obs = None
 
@@ -89,39 +90,16 @@ class TrackingEnv(gym.Env):
             (self.base['x'] - self.target['x']) / self.width,
             (self.base['y'] - self.target['y']) / self.height]
 
-        base_features = np.array(
-            tracker_norm + target_norm + 
-            tracker_to_target + tracker_to_base +
-            target_to_base,
-            dtype=np.float32
-        )
+        base_features = tracker_norm + target_norm + \
+                        tracker_to_target + tracker_to_base + \
+                        target_to_base
         
-        # if algo_config.use_god_view:
-        #     god_features = self._get_future_trajectory()
-        #     return np.concatenate([base_features, god_features])
+        # 加入角度信息
+        tracker_angle = (self.tracker.get('theta', 0) / 360.0)
+        target_angle = (self.target.get('theta', 0) / 360.0)
+        base_features += [tracker_angle, target_angle]
         
-        return base_features
-    
-    # def _get_future_trajectory(self):
-    #     """获取移动方向趋势（特权信息）"""
-    #     if algo_config.mission in [0, 2]:  # 训练tracker时使用target方向
-    #         current = self.target
-    #         prev_pos = self.prev_target_pos
-    #         last_pos = self.last_target_pos
-    #         speed = self.target_speed
-    #     else:  # 训练target时使用tracker方向
-    #         current = self.tracker
-    #         prev_pos = self.prev_tracker_pos
-    #         last_pos = self.last_tracker_pos
-    #         speed = self.tracker_speed
-
-    #     # 计算两帧间的移动方向（归一化到速度）
-    #     dx_prev = np.clip((last_pos['x'] - prev_pos['x']) / speed, -1.0, 1.0)
-    #     dy_prev = np.clip((last_pos['y'] - prev_pos['y']) / speed, -1.0, 1.0)
-    #     dx_current = np.clip((current['x'] - last_pos['x']) / speed, -1.0, 1.0)
-    #     dy_current = np.clip((current['y'] - last_pos['y']) / speed, -1.0, 1.0)
-
-    #     return np.array([dx_prev, dy_prev, dx_current, dy_current], dtype=np.float32)
+        return np.array(base_features, dtype=np.float32)
 
 
     def step(self, action):
@@ -130,30 +108,22 @@ class TrackingEnv(gym.Env):
         old_tracker = self.tracker.copy()
         old_target = self.target.copy()
 
-        # 检查是否收到两个智能体的动作元组
-        if isinstance(action, tuple) and len(action) == 2:
-            # 收到两个智能体的动作 (target_action, tracker_action)
-            target_action, tracker_action = action
-            # 更新两个智能体位置
+        # 处理动作，根据 mission 区分
+        if algo_config.mission == 0:
+            tracker_action = int(action)
+            self.tracker = utils.agent_move(old_tracker, tracker_action, self.tracker_speed)
+            # 注意 target_nav 返回多一个角度信息，新角度将写入 target['theta']
+            self.target, _, _, self.target_frame_count, target_angle = utils.target_nav(
+                self.target, self.tracker, self.base,
+                self.target_speed, self.target_frame_count
+            )
+            self.target['theta'] = target_angle
+        else:
+            tracker_action = int(action)
+            target_action = int((action - tracker_action) * 100)
+                
             self.tracker = utils.agent_move(old_tracker, tracker_action, self.tracker_speed)
             self.target = utils.agent_move(old_target, target_action, self.target_speed)
-        else:
-            # 只收到一个动作，根据当前任务决定控制哪个智能体
-            if algo_config.mission in [0, 2]:  # 训练tracker（防御者）
-                # 更新tracker位置
-                self.tracker = utils.agent_move(old_tracker, action, self.tracker_speed)
-
-                # 更新target位置（使用规则导航或固定策略）
-                if algo_config.mission == 0:
-                    self.target, _, _, self.target_frame_count = utils.target_nav(
-                        self.target, self.tracker, self.base, self.target_speed, self.target_frame_count
-                    )
-                # mission == 2时应该已经接收了两个动作的元组，这里不需要处理
-
-            elif algo_config.mission == 1:  # 训练target（入侵者）
-                # 更新target位置
-                self.target = utils.agent_move(old_target, action, self.target_speed)
-                # mission == 1时应该已经接收了两个动作的元组，这里不需要处理
 
         # 记录轨迹
         self.tracker_trajectory.append((
@@ -189,7 +159,11 @@ class TrackingEnv(gym.Env):
         self.tracker_trajectory = []
         self.target_trajectory = []
         self.base = {'x':250, 'y':250}
-        self.tracker = {'x': np.random.randint(240, 260), 'y': np.random.randint(240, 260)}
+        self.tracker = {
+        'x': np.random.randint(240, 260), 
+        'y': np.random.randint(240, 260),
+        'theta': 0  # 初始化角度
+        }
 
         boundary = np.random.randint(0, 4) #随机选择一个边界
         self.target = {

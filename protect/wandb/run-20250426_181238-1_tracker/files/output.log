@@ -1,0 +1,6 @@
+[34m[1mwandb[0m:   1 of 1 files downloaded.
+Epoch #150: 10240it [00:11, 873.60it/s, env_step=1536000, len=193, loss=0.187, loss/clip=-0.005, loss/ent=3.067, loss/vf=0.892, n/ep=3, n/st=256, rew=-79.72]                                                           
+Epoch #150: test_reward: -75.081342 ± 12.248681, best_reward: -71.884544 ± 10.609266 in #149
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 5

@@ -1,0 +1,63 @@
+Epoch #1: 10240it [00:11, 861.45it/s, env_step=10240, len=176, loss=0.242, loss/clip=-0.001, loss/ent=3.173, loss/vf=1.099, n/ep=3, n/st=256, rew=-77.10]                                                               
+Epoch #1: test_reward: -70.810621 ± 8.934962, best_reward: -64.207677 ± 38.512359 in #0
+Epoch #2: 10240it [00:08, 1174.05it/s, env_step=20480, len=153, loss=0.101, loss/clip=-0.001, loss/ent=3.172, loss/vf=0.534, n/ep=1, n/st=256, rew=-73.06]                                                              
+Epoch #2: test_reward: -72.849258 ± 9.381852, best_reward: -64.207677 ± 38.512359 in #0
+Epoch #3: 10240it [00:08, 1142.88it/s, env_step=30720, len=84, loss=0.095, loss/clip=-0.002, loss/ent=3.156, loss/vf=0.516, n/ep=1, n/st=256, rew=-60.00]                                                               
+Epoch #3: test_reward: -74.183720 ± 9.055637, best_reward: -64.207677 ± 38.512359 in #0
+Epoch #4: 10240it [00:10, 988.26it/s, env_step=40960, len=150, loss=0.129, loss/clip=-0.004, loss/ent=2.972, loss/vf=0.650, n/ep=6, n/st=256, rew=-71.87]                                                               
+Epoch #4: test_reward: -58.881363 ± 33.544138, best_reward: -58.881363 ± 33.544138 in #4
+Epoch #5: 10240it [00:09, 1090.27it/s, env_step=51200, len=157, loss=0.049, loss/clip=-0.005, loss/ent=2.933, loss/vf=0.333, n/ep=1, n/st=256, rew=-75.47]                                                              
+Epoch #5: test_reward: -66.420290 ± 2.687995, best_reward: -58.881363 ± 33.544138 in #4
+Epoch #6: 10240it [00:08, 1143.87it/s, env_step=61440, len=82, loss=0.024, loss/clip=-0.003, loss/ent=2.957, loss/vf=0.226, n/ep=0, n/st=256, rew=-60.47]                                                               
+Epoch #6: test_reward: -79.754496 ± 10.472022, best_reward: -58.881363 ± 33.544138 in #4
+Epoch #7: 10240it [00:08, 1142.51it/s, env_step=71680, len=114, loss=0.047, loss/clip=-0.003, loss/ent=3.025, loss/vf=0.320, n/ep=1, n/st=256, rew=-61.29]                                                              
+Epoch #7: test_reward: -44.539408 ± 50.464597, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #8: 10240it [00:09, 1102.50it/s, env_step=81920, len=110, loss=0.106, loss/clip=-0.002, loss/ent=2.947, loss/vf=0.551, n/ep=1, n/st=256, rew=-66.85]                                                              
+Epoch #8: test_reward: -56.047745 ± 36.988499, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #9: 10240it [00:08, 1172.84it/s, env_step=92160, len=102, loss=0.081, loss/clip=-0.004, loss/ent=2.978, loss/vf=0.457, n/ep=0, n/st=256, rew=-63.01]                                                              
+Epoch #9: test_reward: -64.864103 ± 40.308298, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #10: 10240it [00:08, 1173.60it/s, env_step=102400, len=258, loss=0.044, loss/clip=-0.003, loss/ent=2.992, loss/vf=0.307, n/ep=1, n/st=256, rew=-93.69]                                                            
+Epoch #10: test_reward: -69.072066 ± 4.348501, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #11: 10240it [00:08, 1163.99it/s, env_step=112640, len=192, loss=0.050, loss/clip=-0.003, loss/ent=2.968, loss/vf=0.333, n/ep=1, n/st=256, rew=-72.56]                                                            
+Epoch #11: test_reward: -75.544687 ± 10.568281, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #12: 10240it [00:08, 1172.03it/s, env_step=122880, len=204, loss=0.069, loss/clip=-0.006, loss/ent=2.853, loss/vf=0.412, n/ep=1, n/st=256, rew=-84.27]                                                            
+Epoch #12: test_reward: -76.954517 ± 16.249890, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #13: 10240it [00:08, 1147.66it/s, env_step=133120, len=153, loss=0.053, loss/clip=-0.004, loss/ent=2.912, loss/vf=0.348, n/ep=1, n/st=256, rew=-72.75]                                                            
+Epoch #13: test_reward: -68.643962 ± 33.418472, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #14: 10240it [00:08, 1147.10it/s, env_step=143360, len=78, loss=0.059, loss/clip=-0.004, loss/ent=2.778, loss/vf=0.366, n/ep=1, n/st=256, rew=-62.22]                                                             
+Epoch #14: test_reward: -81.518948 ± 53.635792, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #15: 10240it [00:07, 1375.19it/s, env_step=153600, len=260, loss=0.045, loss/clip=-0.005, loss/ent=2.827, loss/vf=0.313, n/ep=2, n/st=256, rew=-84.86]                                                            
+Epoch #15: test_reward: -59.613697 ± 40.247775, best_reward: -44.539408 ± 50.464597 in #7
+Epoch #16: 10240it [00:07, 1286.19it/s, env_step=163840, len=135, loss=0.040, loss/clip=-0.005, loss/ent=2.888, loss/vf=0.297, n/ep=1, n/st=256, rew=33.61]                                                             
+Epoch #16: test_reward: -28.366388 ± 61.089620, best_reward: -28.366388 ± 61.089620 in #16
+Epoch #17: 10240it [00:09, 1126.42it/s, env_step=174080, len=214, loss=0.109, loss/clip=-0.006, loss/ent=2.837, loss/vf=0.576, n/ep=1, n/st=256, rew=-84.21]                                                            
+Epoch #17: test_reward: -70.050877 ± 8.972382, best_reward: -28.366388 ± 61.089620 in #16
+Epoch #18: 10240it [00:08, 1162.23it/s, env_step=184320, len=151, loss=0.168, loss/clip=-0.004, loss/ent=2.911, loss/vf=0.804, n/ep=1, n/st=256, rew=-66.66]                                                            
+Epoch #18: test_reward: -2.237263 ± 69.137448, best_reward: -2.237263 ± 69.137448 in #18
+Epoch #19: 10240it [00:09, 1134.00it/s, env_step=194560, len=116, loss=0.060, loss/clip=-0.005, loss/ent=2.912, loss/vf=0.378, n/ep=1, n/st=256, rew=37.09]                                                             
+Epoch #19: test_reward: -39.270029 ± 69.490959, best_reward: -2.237263 ± 69.137448 in #18
+Epoch #20: 10240it [00:09, 1114.43it/s, env_step=204800, len=212, loss=0.092, loss/clip=-0.007, loss/ent=2.744, loss/vf=0.504, n/ep=1, n/st=256, rew=-63.34]                                                            
+Epoch #20: test_reward: -0.162019 ± 48.011756, best_reward: -0.162019 ± 48.011756 in #20
+Epoch #21: 10240it [00:09, 1125.30it/s, env_step=215040, len=127, loss=0.156, loss/clip=-0.008, loss/ent=2.660, loss/vf=0.764, n/ep=2, n/st=256, rew=41.48]                                                             
+Epoch #21: test_reward: -11.231696 ± 49.534392, best_reward: -0.162019 ± 48.011756 in #20
+Epoch #22: 10240it [00:09, 1076.32it/s, env_step=225280, len=114, loss=0.169, loss/clip=-0.011, loss/ent=2.708, loss/vf=0.827, n/ep=2, n/st=256, rew=44.71]                                                             
+Epoch #22: test_reward: 17.920828 ± 45.660833, best_reward: 17.920828 ± 45.660833 in #22
+Epoch #23: 10240it [00:09, 1058.70it/s, env_step=235520, len=464, loss=0.208, loss/clip=-0.008, loss/ent=2.416, loss/vf=0.960, n/ep=1, n/st=256, rew=-90.19]                                                            
+Epoch #23: test_reward: 42.919135 ± 3.918591, best_reward: 42.919135 ± 3.918591 in #23
+Epoch #24: 10240it [00:09, 1082.69it/s, env_step=245760, len=99, loss=0.091, loss/clip=-0.006, loss/ent=2.431, loss/vf=0.484, n/ep=0, n/st=256, rew=-24.99]                                                             
+Epoch #24: test_reward: -16.400247 ± 46.573177, best_reward: 42.919135 ± 3.918591 in #23
+Epoch #25: 10240it [00:09, 1074.46it/s, env_step=256000, len=100, loss=0.132, loss/clip=-0.005, loss/ent=2.342, loss/vf=0.642, n/ep=2, n/st=256, rew=39.97]                                                             
+Epoch #25: test_reward: -21.533219 ± 47.678098, best_reward: 42.919135 ± 3.918591 in #23
+Epoch #26: 10240it [00:09, 1063.66it/s, env_step=266240, len=80, loss=0.082, loss/clip=-0.009, loss/ent=2.314, loss/vf=0.457, n/ep=3, n/st=256, rew=-24.09]                                                             
+Epoch #26: test_reward: 43.004325 ± 6.109634, best_reward: 43.004325 ± 6.109634 in #26
+Epoch #27: 10240it [00:09, 1074.65it/s, env_step=276480, len=89, loss=0.119, loss/clip=-0.011, loss/ent=2.068, loss/vf=0.603, n/ep=3, n/st=256, rew=42.05]                                                              
+Epoch #27: test_reward: 2.093873 ± 46.520098, best_reward: 43.004325 ± 6.109634 in #26
+Epoch #28: 10240it [00:09, 1074.45it/s, env_step=286720, len=84, loss=0.133, loss/clip=-0.010, loss/ent=2.329, loss/vf=0.666, n/ep=5, n/st=256, rew=43.77]                                                              
+Epoch #28: test_reward: 29.841948 ± 32.595586, best_reward: 43.004325 ± 6.109634 in #26
+Epoch #29: 10240it [00:09, 1072.96it/s, env_step=296960, len=76, loss=0.148, loss/clip=-0.006, loss/ent=2.108, loss/vf=0.704, n/ep=4, n/st=256, rew=44.98]                                                              
+Epoch #29: test_reward: 16.773125 ± 43.091366, best_reward: 43.004325 ± 6.109634 in #26
+Epoch #30: 10240it [00:09, 1100.88it/s, env_step=307200, len=83, loss=0.060, loss/clip=-0.014, loss/ent=2.299, loss/vf=0.387, n/ep=2, n/st=256, rew=43.44]                                                              
+Epoch #30: test_reward: 29.659690 ± 33.403054, best_reward: 43.004325 ± 6.109634 in #26
+tracker requires_grad=True, has non-zero gradients=True
+target requires_grad=True, has non-zero gradients=False
+Training target policy with epoch 60

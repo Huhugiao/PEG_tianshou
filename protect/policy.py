@@ -1,8 +1,13 @@
 from net import Recurrent, Actor, Critic
 import algo_config, torch, gym
+import numpy as np
 from torch import nn
 from tianshou.policy import PPOPolicy
 from tianshou.utils.net.common import Net, ActorCritic
+from tianshou.data import Batch, ReplayBuffer
+from gym.spaces import MultiDiscrete
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 
 class Policies(nn.Module):
     def __init__(self, policy_a: PPOPolicy, policy_b: PPOPolicy) -> None:
@@ -19,33 +24,48 @@ class Policies(nn.Module):
             raise ValueError("policy_name must be 'a' or 'b'")
     
     def forward(self, batch, state=None, **kwargs):
-        """获取两个智能体的动作"""
-        if self.active_policy == "a":
-            # 如果策略A活跃，允许A计算梯度，阻断B的梯度
-            result_a = self.policy_a(batch, state, **kwargs)
-            with torch.no_grad():  # 不参与梯度计算
-                result_b = self.policy_b(batch, state)
-
-            result = result_a
-            result.both_actions = (result_a.act, result_b.act) 
-        else:
-            # 如果策略B活跃，允许B计算梯度，阻断A的梯度
-            with torch.no_grad():  # 不参与梯度计算
-                result_a = self.policy_a(batch, state, **kwargs)
+        """获取两个智能体的动作，根据 mission 决定输出形式"""
+        # 始终先算出 A/B 两套结果
+        result_a = self.policy_a(batch, state, **kwargs)
+        with torch.no_grad():
             result_b = self.policy_b(batch, state)
 
-            result = result_b
-            result.both_actions = (result_a.act, result_b.act)
+        # 单智能体模式：只用 A 的输出
+        if algo_config.mission == 0:
+            result = result_a
+            result.act = result_a.act
+        else:
+            # 双智能体模式：选一个结果作"主"返回，但保留两个子动作
+            if self.active_policy == "a":
+                result = result_a
+            else:
+                result = result_b
+            result.tracker_act = result_a.act
+            result.target_act = result_b.act
+            result.act = result_a.act + result_b.act / 100.0
         
         return result
     
     def process_fn(self, batch, buffer, indices):
-        """Process function delegates to active policy"""
+        """Process function delegates to active policy, but handles encoded actions"""
+        # 如果是双智能体模式，先进行动作解码
+        if algo_config.mission != 0:
+            if isinstance(batch.act, torch.Tensor):
+                # 不能创建新batch，而是在现有batch上修改
+                if self.active_policy == "a":  # tracker
+                    # 提取整数部分作为tracker动作
+                    batch.act = batch.act.floor().to(torch.int64)
+                else:  # target (policy_b)
+                    # 提取小数部分*100作为target动作
+                    batch.act = ((batch.act - batch.act.floor()) * 100).round().to(torch.int64)
+        
+        # 调用原始策略的process_fn来计算优势函数等
         if self.active_policy == "a":
             return self.policy_a.process_fn(batch, buffer, indices)
         else:
             return self.policy_b.process_fn(batch, buffer, indices)
     
+
     def learn(self, batch, batch_size, repeat, **kwargs):
         """Only the active policy learns"""
         if self.active_policy == "a":
@@ -71,46 +91,122 @@ class Policies(nn.Module):
             self.policy_b.load_state_dict(state_dict)
 
     def exploration_noise(self, act, batch):
-        """将探索噪声应用到动作上，代理到活跃策略的exploration_noise方法"""
-        if self.active_policy == "a":
-            return self.policy_a.exploration_noise(act, batch)
+        """将探索噪声应用到动作上，处理单个动作或元组动作"""
+        # 处理元组形式动作
+        if isinstance(act, tuple) and len(act) == 2:
+            tracker_act, target_act = act
+            
+            # 根据当前活跃策略决定哪个动作添加噪声
+            if self.active_policy == "a":
+                # tracker活跃时，只给tracker动作添加噪声
+                tracker_act_with_noise = self.policy_a.exploration_noise(tracker_act, batch)
+                return (tracker_act_with_noise, target_act)
+            else:
+                # target活跃时，只给target动作添加噪声
+                target_act_with_noise = self.policy_b.exploration_noise(target_act, batch)
+                return (tracker_act, target_act_with_noise)
+        # 默认情况，使用活跃策略处理单个动作
         else:
-            return self.policy_b.exploration_noise(act, batch)
+            if self.active_policy == "a":
+                return self.policy_a.exploration_noise(act, batch)
+            else:
+                return self.policy_b.exploration_noise(act, batch)
     
     def map_action(self, act):
-        """映射原始网络输出到动作空间范围，代理到活跃策略"""
-        if self.active_policy == "a":
-            return self.policy_a.map_action(act)
-        else:
-            return self.policy_b.map_action(act)
+        """
+        映射网络输出到环境需要的动作格式：
+        - 单智能体：act 为标量、list 或一维 np.ndarray
+        - 双智能体：act 为 (arrA, arrB) 或 (scalarA, scalarB)
+        返回：
+            - 单环境标量：int
+            - 多环境列表：长度==env_num 的 list，元素为 int 或 (int,int)
+        """
+        # 双智能体 tuple
+        if isinstance(act, tuple) and len(act) == 2:
+            a0, a1 = act
+            # torch.Tensor 先转 numpy
+            if isinstance(a0, torch.Tensor):
+                a0 = a0.cpu().numpy()
+                a1 = a1.cpu().numpy()
+            # 向量化批量输出：numpy.ndarray 或 list
+            if isinstance(a0, (np.ndarray, list)):
+                return [(int(a0[i]), int(a1[i])) for i in range(len(a0))]
+            # 单环境下的双动作
+            return (int(a0), int(a1))
+
+        # 单智能体批量输出：torch.Tensor / np.ndarray / list
+        if isinstance(act, torch.Tensor):
+            return act.cpu().numpy().tolist()
+        if isinstance(act, np.ndarray):
+            return act.tolist()
+        if isinstance(act, list):
+            return act
+
+        # 单环境标量
+        return int(act)
 
     def map_action_inverse(self, act):
-        """动作映射的逆操作，代理到活跃策略"""
-        if self.active_policy == "a":
-            return self.policy_a.map_action_inverse(act)
+        """动作映射的逆操作，处理单个动作或元组动作"""
+        # 处理元组形式动作
+        if isinstance(act, tuple) and len(act) == 2:
+            tracker_act, target_act = act
+            
+            # 分别对两个智能体的动作进行逆映射
+            inv_tracker = self.policy_a.map_action_inverse(tracker_act)
+            inv_target = self.policy_b.map_action_inverse(target_act)
+            
+            # 返回逆映射后的元组
+            return (inv_tracker, inv_target)
+        
+        # 处理numpy数组中的元组动作（向量化环境）
+        elif isinstance(act, np.ndarray) and act.size > 0 and isinstance(act[0], tuple):
+            inv_actions = []
+            for single_act in act:
+                inv_actions.append(self.map_action_inverse(single_act))
+            return np.array(inv_actions, dtype=object)
+            
+        # 默认情况，使用活跃策略处理单个动作
         else:
-            return self.policy_b.map_action_inverse(act)
-
-    def post_process_fn(self, batch, buffer, indices):
-        """后处理函数，代理到活跃策略"""
-        if self.active_policy == "a":
-            return self.policy_a.post_process_fn(batch, buffer, indices)
-        else:
-            return self.policy_b.post_process_fn(batch, buffer, indices)
+            if self.active_policy == "a":
+                return self.policy_a.map_action_inverse(act)
+            else:
+                return self.policy_b.map_action_inverse(act)
     
-    def update(self, sample_size: int, buffer=None, **kwargs):
-        """更新策略网络和重放缓冲区，代理到活跃策略的update方法"""
+    def update(self, sample_size: int, buffer: Optional[ReplayBuffer], **kwargs: Any) -> Dict[str, Any]:
+        """使用active_policy处理更新，确保正确的数据流"""
+        # 不能直接使用传入的batch和indices，而是要走完整的数据处理流程
         if self.active_policy == "a":
-            return self.policy_a.update(sample_size, buffer, **kwargs)
+            # 使用原始的policy.update流程处理tracker
+            result = self.policy_a.update(sample_size, buffer, **kwargs)
         else:
-            return self.policy_b.update(sample_size, buffer, **kwargs)
+            # 使用原始的policy.update流程处理target
+            result = self.policy_b.update(sample_size, buffer, **kwargs)
+        
+        return result
 
-
+class CustomPPOPolicy(PPOPolicy):
+    def process_fn(self, batch: Batch, buffer: ReplayBuffer, indices: np.ndarray) -> Batch:
+        """重写process_fn以在原始处理前解码动作"""
+        # 不需要使用额外的属性，直接判断mission和策略类型即可
+        if algo_config.mission != 0:
+            if algo_config.mission == 2:
+                        batch.act = np.floor(batch.act).astype(np.int64)
+            else:
+                # 提取小数部分*100作为target动作
+                batch.act = np.round((batch.act - np.floor(batch.act)) * 100).astype(np.int64)
+                    
+        # 调用父类方法完成剩余处理
+        return super().process_fn(batch, buffer, indices)
 
 def policy_maker():
     env = gym.make(algo_config.task)
     algo_config.state_shape = env.observation_space.shape
-    algo_config.action_shape = env.action_space.n
+    # 兼容 Discrete 和 MultiDiscrete
+    if isinstance(env.action_space, MultiDiscrete):
+        # MultiDiscrete([n, n]) 时，每个子策略的 action_dim 就是 n
+        algo_config.action_shape = int(env.action_space.nvec[0])
+    else:
+        algo_config.action_shape = env.action_space.n
 
     # Create separate networks for target policy
     net_target_a = Recurrent(
@@ -166,7 +262,7 @@ def policy_maker():
     dist = torch.distributions.Categorical
 
     # Create separate policies
-    target_policy = PPOPolicy(
+    target_policy = CustomPPOPolicy(
         actor_target,
         critic_target,
         optim_target,
@@ -186,7 +282,7 @@ def policy_maker():
         deterministic_eval=False,
     ).to(algo_config.device)
 
-    tracker_policy = PPOPolicy(
+    tracker_policy = CustomPPOPolicy(
         actor_tracker,
         critic_tracker,
         optim_tracker,

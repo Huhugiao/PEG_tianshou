@@ -10,10 +10,8 @@ from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 from tianshou.data import PrioritizedVectorReplayBuffer, VectorReplayBuffer, Batch, Collector
 from tianshou.env import SubprocVectorEnv
-from tianshou.trainer import OnpolicyTrainer
-from tianshou.policy import PPOPolicy
+from trainer import MyOnpolicyTrainer
 from tianshou.utils import TensorboardLogger, WandbLogger
-from tianshou.utils.net.common import Net, ActorCritic
 import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -21,7 +19,10 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from policy import policy_maker
 import policy_test
 
-def train(active_policy="a"):
+import wandb
+wandb.tensorboard.patch(root_logdir=algo_config.logdir)
+
+def train(active_policy="a", stage_idx: int = None):
 
     # 构建训练环境和测试环境（传入共享模型）
     train_envs = SubprocVectorEnv([
@@ -60,56 +61,59 @@ def train(active_policy="a"):
     train_collector.reset()
     train_collector.collect(n_step=algo_config.batch_size * algo_config.training_num)
 
-    # 设置数据存储路径
-    log_path = algo_config.logdir
-    # log_path = os.path.join(
-    #     algo_config.alt_logdir if algo_config.mission == 1 
-    #     else algo_config.logdir)
+    root_log = algo_config.logdir
+    events_folder = "events"
+    tb_log = os.path.join(root_log, events_folder)
+    os.makedirs(tb_log, exist_ok=True)
+    writer = SummaryWriter(tb_log)
+
+    stage_policy_dir = os.path.join(root_log, "stage_policies")
+    os.makedirs(stage_policy_dir, exist_ok=True)
 
     if not algo_config.watch_agent:
         if algo_config.using_tensorboard:
-            writer = SummaryWriter(log_path)
             logger = TensorboardLogger(writer, save_interval=algo_config.save_interval)
         else:
-            # Determine WandB parameters based on mission
-            if algo_config.mission == 1:
-                wb_name = algo_config.alt_wb_name
-                run_id = algo_config.alt_run_id
-            else:
-                wb_name = algo_config.wb_name
-                run_id = algo_config.run_id
-                
             logger = WandbLogger(
                 save_interval=algo_config.save_interval,
-                name=wb_name,
+                name=f"{algo_config.wb_name}",           # no need to suffix run‑id
                 project=algo_config.wb_project,
-                run_id=run_id,
+                run_id=f"{algo_config.run_id}",           # keep same run_id
             )
-            logger.load(SummaryWriter(log_path))
+            logger.load(writer)
 
     # 存储最优记录
     def save_best_fn(policy):
-        torch.save(policy.state_dict(), os.path.join(log_path, "policy.pth"))
+        if stage_idx is not None:
+            stage_file = os.path.join(stage_policy_dir, f"policy{stage_idx}.pth")
+            best_file = os.path.join(root_log, "policy.pth")
+            torch.save(policy.state_dict(), stage_file)
+        else:
+            best_file = os.path.join(root_log, "policy.pth")
+
+        torch.save(policy.state_dict(), best_file)
 
     # 终止函数
-    def stop_fn(mean_rewards):
-        return mean_rewards >= algo_config.reward_threshold
+    def stop_fn(mean_reward: float, reward_std: float) -> bool:
+        return (mean_reward > 35) and (reward_std < 5)
+
 
     # 存储checkpoint
     def save_checkpoint_fn(epoch, env_step, gradient_step):
-        ckpt_path = os.path.join(log_path, "checkpoint.pth")
-        # Save both policies' state
+        ckpt_path = os.path.join(root_log, "checkpoint.pth")
         torch.save({
             "model": policy.state_dict(),
             "optim_target": optim_target.state_dict(),
             "optim_tracker": optim_tracker.state_dict()
         }, ckpt_path)
+        return ckpt_path
 
-    # 观察一次智能体仿真（如果有设置）
+    
     if algo_config.watch_agent:
         np.random.seed(None)
-        print(f"Loading agent under {log_path}")
-        ckpt_path = os.path.join(log_path, "policy.pth")
+        print(f"Loading agent under {root_log}")
+        algo_config.mission = 0
+        ckpt_path = os.path.join(root_log, "policy.pth")
         policy.load_state_dict(torch.load(ckpt_path, map_location=algo_config.device))
         policy.eval()
         env = gym.make(algo_config.task)
@@ -120,32 +124,24 @@ def train(active_policy="a"):
 
     # 从历史记录中恢复训练（如果有设置）
     if algo_config.resume:
-        print(f"Loading agent under {log_path}")
-        ckpt_path = os.path.join(log_path, "checkpoint.pth")
+        print(f"Loading agent under {root_log}")
+        ckpt_path = os.path.join(root_log, "checkpoint.pth")
         if os.path.exists(ckpt_path):
             checkpoint = torch.load(ckpt_path, map_location=algo_config.device)
             policy.load_state_dict(checkpoint["model"])
-            
-            # Load the appropriate optimizer based on active policy
-            if policy.active_policy == "a":
-                optim_target.load_state_dict(checkpoint["optim_target"])
-                print("Successfully restored target policy and optimizer.")
-            else:
-                optim_tracker.load_state_dict(checkpoint["optim_tracker"])
-                print("Successfully restored tracker policy and optimizer.")
         else:
             print("Fail to restore policy and optimizer.")
     
 
-    result = OnpolicyTrainer(
+    epoch, result = MyOnpolicyTrainer(
             policy=policy,
             train_collector=train_collector,
             test_collector=test_collector, 
             max_epoch=algo_config.epoch,
             step_per_epoch=algo_config.step_per_epoch,
-            step_per_collect=algo_config.step_per_collect,
+            episode_per_collect=64,
             repeat_per_collect=algo_config.repeat_per_collect,
-            episode_per_test=algo_config.test_num,
+            episode_per_test=32,
             batch_size=algo_config.batch_size,
             update_per_step=algo_config.update_per_step,
             stop_fn=stop_fn,
@@ -155,18 +151,20 @@ def train(active_policy="a"):
             save_checkpoint_fn=save_checkpoint_fn,
             ).run()
     
-    def check_gradients(model, name="model"):
-        has_grad = any(p.grad is not None and torch.norm(p.grad) > 0 for p in model.parameters() if p.requires_grad)
-        requires_grad = any(p.requires_grad for p in model.parameters())
-        print(f"{name} requires_grad={requires_grad}, has non-zero gradients={has_grad}")
-    check_gradients(policy.policy_a, "tracker")
-    check_gradients(policy.policy_b, "target")
+    return epoch
+    
+    # def check_gradients(model, name="model"):
+    #     has_grad = any(p.grad is not None and torch.norm(p.grad) > 0 for p in model.parameters() if p.requires_grad)
+    #     requires_grad = any(p.requires_grad for p in model.parameters())
+    #     print(f"{name} requires_grad={requires_grad}, has non-zero gradients={has_grad}")
+    # check_gradients(policy.policy_a, "tracker")
+    # check_gradients(policy.policy_b, "target")
 
 def alt_train():
     initial_epoch = algo_config.epoch
     algo_config.resume = False  # Reset resume flag for new training
     
-    for i in range(0, 5):
+    for i in range(0, 30):
         if i == 0:
             algo_config.mission = 0
             active_policy = "a"
@@ -175,21 +173,18 @@ def alt_train():
             mission = 1 + ((i - 1) % 2)  # Alternates between 1 and 2
             algo_config.mission = mission
             
-            # Increase epoch with each mission switch
-            if mission == 2:
-                algo_config.epoch += algo_config.epoch
-            
             # Set active policy based on mission
             if mission == 1:
                 active_policy = "b"  # Target policy
+                algo_config.epoch = epoch + initial_epoch
                 print(f"Training target policy with epoch {algo_config.epoch}")
             else:
                 active_policy = "a"  # Tracker policy
+                algo_config.epoch = epoch + initial_epoch
                 print(f"Training tracker policy with epoch {algo_config.epoch}")
-        
-        # Pass the active policy to train
-        train(active_policy=active_policy)
-        
+    
+        # 传入当前阶段 i，训练结束时将会保存为 policy_stage_i.pth
+        epoch = train(active_policy=active_policy, stage_idx=i)
         algo_config.resume = True
 
 

@@ -1,0 +1,15 @@
+{"time":"2025-04-25T15:09:35.694630717+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/protect/wandb/run-20250425_150935-5_tracker/logs/debug-core.log"}
+{"time":"2025-04-25T15:09:36.148395364+08:00","level":"INFO","msg":"created new stream","id":"5_tracker"}
+{"time":"2025-04-25T15:09:36.148438177+08:00","level":"INFO","msg":"stream: started","id":"5_tracker"}
+{"time":"2025-04-25T15:09:36.148594476+08:00","level":"INFO","msg":"handler: started","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:36.149306742+08:00","level":"INFO","msg":"sender: started","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:36.149480649+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:37.583012359+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-25T15:09:39.176401648+08:00","level":"INFO","msg":"stream: closing","id":"5_tracker"}
+{"time":"2025-04-25T15:09:39.177245406+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-25T15:09:39.177844336+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-25T15:09:40.400995443+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-25T15:09:41.5881865+08:00","level":"INFO","msg":"handler: closed","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:41.588209745+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:41.588239272+08:00","level":"INFO","msg":"sender: closed","stream_id":"5_tracker"}
+{"time":"2025-04-25T15:09:41.588283098+08:00","level":"INFO","msg":"stream: closed","id":"5_tracker"}
