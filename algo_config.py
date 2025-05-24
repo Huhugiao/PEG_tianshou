@@ -56,7 +56,7 @@ base_obs_dim = 12  # 基础观测维度
 use_god_view = False # 是否启用特权观测
 god_view_dim = 4  # 特权信息维度
 
-watch_agent = 0
+watch_agent = 1
 resume = False
 
 using_tensorboard = True

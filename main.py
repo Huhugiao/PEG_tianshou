@@ -86,7 +86,7 @@ def train(active_policy="a", stage_idx: int = None):
         np.random.seed(None)
         print(f"Loading agent under {root_log}")
         algo_config.mission = 1
-        ckpt_path = os.path.join(root_log, "stage_policies", "policy28.pth")
+        ckpt_path = os.path.join(root_log, "stage_policies", "policy17.pth")
         load_policy_state(policy, ckpt_path)
         policy.eval()
         env = gym.make(algo_config.task)
@@ -201,11 +201,11 @@ def alt_train():
             if mission == 1:
                 active_policy = "b"  # Target policy
                 algo_config.epoch = epoch + initial_epoch
-                print(f"Training target policy with epoch {algo_config.epoch}")
+                print(f"Training target, epoch {algo_config.epoch}, stage {i}")
             else:
                 active_policy = "a"  # Tracker policy
                 algo_config.epoch = epoch + initial_epoch
-                print(f"Training tracker policy with epoch {algo_config.epoch}")
+                print(f"Training tracker, epoch {algo_config.epoch}, stage {i}")
     
         # 传入当前阶段 i，训练结束时将会保存为 policy_stage_i.pth
         epoch = train(active_policy=active_policy, stage_idx=i)
