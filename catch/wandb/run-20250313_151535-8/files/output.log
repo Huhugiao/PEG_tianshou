@@ -1,1 +1,0 @@
-Epoch #1: 10240it [00:16, 637.60it/s, env_step=10240, len=385, loss=-0.050, loss/clip=-0.017, loss/ent=1.362, loss/vf=0.031, n/ep=0, n/st=256, rew=-633.10]                        

@@ -1,9 +1,0 @@
-{"time":"2025-03-12T14:27:40.194879988+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/run-20250312_142740-1/logs/debug-core.log"}
-{"time":"2025-03-12T14:27:40.46383656+08:00","level":"INFO","msg":"created new stream","id":"1"}
-{"time":"2025-03-12T14:27:40.463943397+08:00","level":"INFO","msg":"handler: started","stream_id":"1"}
-{"time":"2025-03-12T14:27:40.463975225+08:00","level":"INFO","msg":"stream: started","id":"1"}
-{"time":"2025-03-12T14:27:40.464001415+08:00","level":"INFO","msg":"sender: started","stream_id":"1"}
-{"time":"2025-03-12T14:27:40.464036387+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"1"}
-{"time":"2025-03-12T14:27:41.988874191+08:00","level":"INFO","msg":"api: retrying HTTP error","status":409,"url":"https://api.wandb.ai/graphql","body":"{\"errors\":[{\"message\":\"run 1 was previously created and deleted; try a new run name\",\"path\":[\"upsertBucket\"]}],\"data\":{\"upsertBucket\":null}}"}
-{"time":"2025-03-12T14:27:44.690755206+08:00","level":"INFO","msg":"api: retrying HTTP error","status":409,"url":"https://api.wandb.ai/graphql","body":"{\"errors\":[{\"message\":\"run 1 was previously created and deleted; try a new run name\",\"path\":[\"upsertBucket\"]}],\"data\":{\"upsertBucket\":null}}"}
-{"time":"2025-03-12T14:27:49.930356485+08:00","level":"INFO","msg":"api: retrying HTTP error","status":409,"url":"https://api.wandb.ai/graphql","body":"{\"errors\":[{\"message\":\"run 1 was previously created and deleted; try a new run name\",\"path\":[\"upsertBucket\"]}],\"data\":{\"upsertBucket\":null}}"}

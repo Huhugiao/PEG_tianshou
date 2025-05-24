@@ -1,9 +1,0 @@
-{"time":"2025-03-12T14:31:09.087292024+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/run-20250312_143109-2/logs/debug-core.log"}
-{"time":"2025-03-12T14:31:09.375756445+08:00","level":"INFO","msg":"created new stream","id":"2"}
-{"time":"2025-03-12T14:31:09.375799678+08:00","level":"INFO","msg":"stream: started","id":"2"}
-{"time":"2025-03-12T14:31:09.375858418+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"2"}
-{"time":"2025-03-12T14:31:09.375893702+08:00","level":"INFO","msg":"handler: started","stream_id":"2"}
-{"time":"2025-03-12T14:31:09.375942175+08:00","level":"INFO","msg":"sender: started","stream_id":"2"}
-{"time":"2025-03-12T14:31:10.863159626+08:00","level":"INFO","msg":"Starting system monitor"}
-{"time":"2025-03-12T14:31:15.095754075+08:00","level":"WARN","msg":"sender: sendUseArtifact: job builder disabled, skipping"}
-{"time":"2025-03-12T14:31:20.953052072+08:00","level":"INFO","msg":"tensorboard: no root directory after 10 seconds, using working directory"}
