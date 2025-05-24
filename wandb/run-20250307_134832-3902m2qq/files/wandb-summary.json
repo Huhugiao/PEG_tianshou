@@ -1,0 +1,1 @@
+{"train/length":423,"train/episode":1,"train/reward":-60.497448,"_timestamp":1.7413265397897334e+09,"_step":13,"test/reward":-216.80899,"test/env_step":10240,"_runtime":27.394948526,"test/reward_std":0,"test/length_std":0,"_wandb":{"runtime":27},"global_step":10240,"test/length":1000}

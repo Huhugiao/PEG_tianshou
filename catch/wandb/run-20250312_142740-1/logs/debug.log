@@ -1,0 +1,16 @@
+2025-03-12 14:27:40,157 INFO    MainThread:8771 [wandb_setup.py:_flush():67] Current SDK version is 0.19.8
+2025-03-12 14:27:40,157 INFO    MainThread:8771 [wandb_setup.py:_flush():67] Configure stats pid to 8771
+2025-03-12 14:27:40,158 INFO    MainThread:8771 [wandb_setup.py:_flush():67] Loading settings from /home/ace/.config/wandb/settings
+2025-03-12 14:27:40,158 INFO    MainThread:8771 [wandb_setup.py:_flush():67] Loading settings from /home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/settings
+2025-03-12 14:27:40,158 INFO    MainThread:8771 [wandb_setup.py:_flush():67] Loading settings from environment variables
+2025-03-12 14:27:40,158 INFO    MainThread:8771 [wandb_init.py:setup_run_log_directory():647] Logging user logs to /home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/run-20250312_142740-1/logs/debug.log
+2025-03-12 14:27:40,158 INFO    MainThread:8771 [wandb_init.py:setup_run_log_directory():648] Logging internal logs to /home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/run-20250312_142740-1/logs/debug-internal.log
+2025-03-12 14:27:40,159 INFO    MainThread:8771 [wandb_init.py:init():761] calling init triggers
+2025-03-12 14:27:40,159 INFO    MainThread:8771 [wandb_init.py:init():766] wandb.init called with sweep_config: {}
+config: {'_wandb': {}}
+2025-03-12 14:27:40,159 INFO    MainThread:8771 [wandb_init.py:init():784] starting backend
+2025-03-12 14:27:40,159 INFO    MainThread:8771 [wandb_init.py:init():788] sending inform_init request
+2025-03-12 14:27:40,192 INFO    MainThread:8771 [backend.py:_multiprocessing_setup():101] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2025-03-12 14:27:40,192 INFO    MainThread:8771 [wandb_init.py:init():798] backend started and connected
+2025-03-12 14:27:40,194 INFO    MainThread:8771 [wandb_init.py:init():891] updated telemetry
+2025-03-12 14:27:40,210 INFO    MainThread:8771 [wandb_init.py:init():915] communicating run to backend with 90.0 second timeout

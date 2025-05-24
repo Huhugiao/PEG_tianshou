@@ -1,0 +1,7 @@
+Loading agent under performance_test_catch0309
+Successfully restore policy and optim.
+Successfully restore buffer.
+Loading agent under performance_test_catch0309
+Successfully restore policy and optim.
+/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/tianshou/data/collector.py:68: UserWarning: Single environment detected, wrap to DummyVectorEnv.
+  warnings.warn("Single environment detected, wrap to DummyVectorEnv.")

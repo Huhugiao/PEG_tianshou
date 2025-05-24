@@ -1,0 +1,15 @@
+{"time":"2025-03-07T13:01:21.077655534+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/wandb/run-20250307_130121-wahpewpk/logs/debug-core.log"}
+{"time":"2025-03-07T13:01:21.362637095+08:00","level":"INFO","msg":"created new stream","id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.362689807+08:00","level":"INFO","msg":"stream: started","id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.362741026+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.36284381+08:00","level":"INFO","msg":"sender: started","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.363604373+08:00","level":"INFO","msg":"handler: started","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.786654181+08:00","level":"INFO","msg":"stream: closing","id":"wahpewpk"}
+{"time":"2025-03-07T13:01:21.786807146+08:00","level":"ERROR","msg":"sender: upsertConfig: RunRecord is nil"}
+{"time":"2025-03-07T13:01:22.671404704+08:00","level":"ERROR","msg":"HTTP error","status":404,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-03-07T13:01:22.671611874+08:00","level":"ERROR","msg":"runfiles: CreateRunFiles returned error: returned error 404: {\"data\":{\"createRunFiles\":null},\"errors\":[{\"message\":\"project /your_project_name not found during createRunFiles\",\"path\":[\"createRunFiles\"]}]}"}
+{"time":"2025-03-07T13:01:22.671976799+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-03-07T13:01:22.672036394+08:00","level":"INFO","msg":"handler: closed","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:22.672051393+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:22.67207058+08:00","level":"INFO","msg":"sender: closed","stream_id":"wahpewpk"}
+{"time":"2025-03-07T13:01:22.672111289+08:00","level":"INFO","msg":"stream: closed","id":"wahpewpk"}

@@ -1,0 +1,21 @@
+Epoch #1: 10240it [00:12, 827.05it/s, env_step=10240, len=748, loss/actor=-0.647, loss/critic1=3.798, loss/critic2=3.804, n/ep=0, n/st=256, rew=-156.63]                 
+Epoch #1: test_reward: -280.387513 ± 0.000000, best_reward: -30.000000 ± 0.000000 in #0
+Epoch #2: 10240it [00:13, 783.76it/s, env_step=20480, len=1000, loss/actor=-0.847, loss/critic1=2.504, loss/critic2=2.493, n/ep=0, n/st=256, rew=-296.46]                
+Epoch #2: test_reward: 14.056627 ± 0.000000, best_reward: 14.056627 ± 0.000000 in #2
+Epoch #3: 10240it [00:13, 751.33it/s, env_step=30720, len=667, loss/actor=-1.133, loss/critic1=1.871, loss/critic2=1.893, n/ep=3, n/st=256, rew=-206.12]                 
+Epoch #3: test_reward: -300.000000 ± 0.000000, best_reward: 14.056627 ± 0.000000 in #2
+Epoch #4: 10240it [00:14, 703.32it/s, env_step=40960, len=500, loss/actor=-1.482, loss/critic1=2.093, loss/critic2=2.116, n/ep=0, n/st=256, rew=-124.01]                 
+Epoch #4: test_reward: 50.000000 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #5: 10240it [00:15, 676.80it/s, env_step=51200, len=49, loss/actor=-1.795, loss/critic1=1.480, loss/critic2=1.554, n/ep=0, n/st=256, rew=35.60]                    
+Epoch #5: test_reward: -299.256184 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #6: 10240it [00:16, 638.96it/s, env_step=61440, len=1000, loss/actor=-2.138, loss/critic1=1.319, loss/critic2=1.369, n/ep=0, n/st=256, rew=-298.31]                
+Epoch #6: test_reward: 50.000000 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #7: 10240it [00:16, 637.33it/s, env_step=71680, len=678, loss/actor=-2.484, loss/critic1=1.389, loss/critic2=1.480, n/ep=0, n/st=256, rew=-151.62]                 
+Epoch #7: test_reward: -297.729133 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #8: 10240it [00:17, 598.68it/s, env_step=81920, len=342, loss/actor=-2.892, loss/critic1=0.955, loss/critic2=0.990, n/ep=4, n/st=256, rew=-64.48]                  
+Epoch #8: test_reward: -298.738416 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #9: 10240it [00:19, 519.93it/s, env_step=92160, len=1000, loss/actor=-3.275, loss/critic1=1.519, loss/critic2=1.500, n/ep=2, n/st=256, rew=-299.05]                
+Epoch #9: test_reward: -299.729323 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #10: 10240it [00:19, 530.35it/s, env_step=102400, len=959, loss/actor=-3.663, loss/critic1=1.075, loss/critic2=1.100, n/ep=0, n/st=256, rew=-261.41]               
+Epoch #10: test_reward: -298.683512 ± 0.000000, best_reward: 50.000000 ± 0.000000 in #4
+Epoch #11: 10240it [00:20, 501.48it/s, env_step=112640, len=1000, loss/actor=-3.955, loss/critic1=0.669, loss/critic2=0.700, n/ep=1, n/st=256, rew=-297.91]              

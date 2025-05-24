@@ -1,0 +1,7 @@
+Loading agent under performance_test_catch0310
+Successfully restore policy and optim.
+Successfully restore buffer.
+[34m[1mwandb[0m:   1 of 1 files downloaded.
+Epoch #8: 10240it [00:13, 767.13it/s, env_step=81920, len=213, loss=0.071, loss/clip=-0.002, loss/ent=0.193, loss/vf=0.301, n/ep=0, n/st=256, rew=14.93]                     
+Epoch #8: test_reward: 17.047185 ± 1.675970, best_reward: 17.047185 ± 1.675970 in #8
+Epoch #9:  74%|###7 | 7424/10000 [00:08<00:03, 836.38it/s, env_step=89088, len=212, loss=0.143, loss/clip=-0.002, loss/ent=0.134, loss/vf=0.585, n/ep=4, n/st=256, rew=15.56]

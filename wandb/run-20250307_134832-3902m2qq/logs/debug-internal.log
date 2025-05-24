@@ -1,0 +1,16 @@
+{"time":"2025-03-07T13:48:32.580569676+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/wandb/run-20250307_134832-3902m2qq/logs/debug-core.log"}
+{"time":"2025-03-07T13:48:32.873918869+08:00","level":"INFO","msg":"created new stream","id":"3902m2qq"}
+{"time":"2025-03-07T13:48:32.873966061+08:00","level":"INFO","msg":"stream: started","id":"3902m2qq"}
+{"time":"2025-03-07T13:48:32.873992662+08:00","level":"INFO","msg":"handler: started","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:48:32.874025836+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:48:32.874028211+08:00","level":"INFO","msg":"sender: started","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:48:35.448248518+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-03-07T13:48:45.548872794+08:00","level":"INFO","msg":"tensorboard: no root directory after 10 seconds, using working directory"}
+{"time":"2025-03-07T13:48:59.974186223+08:00","level":"INFO","msg":"stream: closing","id":"3902m2qq"}
+{"time":"2025-03-07T13:48:59.974242562+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-03-07T13:48:59.974839731+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-03-07T13:49:01.513790107+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-03-07T13:49:02.488209287+08:00","level":"INFO","msg":"handler: closed","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:49:02.488242531+08:00","level":"INFO","msg":"sender: closed","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:49:02.488233734+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"3902m2qq"}
+{"time":"2025-03-07T13:49:02.488362983+08:00","level":"INFO","msg":"stream: closed","id":"3902m2qq"}

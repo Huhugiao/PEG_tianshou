@@ -1,0 +1,10 @@
+{"time":"2025-03-13T09:58:28.557967316+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.8","symlink path":"/home/ace/miniconda3/envs/lnenv/lib/python3.8/site-packages/gym/envs/user/catch/wandb/run-20250313_095828-6/logs/debug-core.log"}
+{"time":"2025-03-13T09:58:28.826183892+08:00","level":"INFO","msg":"created new stream","id":"6"}
+{"time":"2025-03-13T09:58:28.826250431+08:00","level":"INFO","msg":"stream: started","id":"6"}
+{"time":"2025-03-13T09:58:28.826336193+08:00","level":"INFO","msg":"handler: started","stream_id":"6"}
+{"time":"2025-03-13T09:58:28.826357705+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"6"}
+{"time":"2025-03-13T09:58:28.826393709+08:00","level":"INFO","msg":"sender: started","stream_id":"6"}
+{"time":"2025-03-13T09:58:30.377014506+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-03-13T09:58:35.216686784+08:00","level":"WARN","msg":"sender: sendUseArtifact: job builder disabled, skipping"}
+{"time":"2025-03-13T09:58:40.522227814+08:00","level":"INFO","msg":"tensorboard: no root directory after 10 seconds, using working directory"}
+{"time":"2025-03-13T10:27:20.978502804+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": read tcp 172.30.239.170:39058->35.186.228.49:443: read: connection reset by peer"}
