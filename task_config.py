@@ -6,7 +6,7 @@ height = 500  # 地图的高度，单位像素
 
 # 像素大小、移动步长、障碍物尺寸
 pixel_size = 10  # 每个像素代表的实际距离单位
-target_speed = 6
+target_speed = 8
 tracker_speed = 6 
 min_obstacle_size = 4  # 最小障碍物尺寸
 max_obstacle_size = 6  # 最大障碍物尺寸

@@ -64,7 +64,7 @@ epoch = 250 # 训练周期总数，表示模型训练的总迭代次数
 
 wb_project = "protect_vs_invade"
 
-wb_name = "_adjusting_41"
+wb_name = "_adjusting_42"
 logdir = os.path.join("tblogs", wb_project + wb_name)
 run_id = "16"
 

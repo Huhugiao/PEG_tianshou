@@ -86,7 +86,7 @@ def train(active_policy="a", stage_idx: int = None):
         np.random.seed(None)
         print(f"Loading agent under {root_log}")
         algo_config.mission = 1
-        ckpt_path = os.path.join(root_log, "stage_policies", "policy17.pth")
+        ckpt_path = os.path.join(root_log, "stage_policies", "policy28.pth")
         load_policy_state(policy, ckpt_path)
         policy.eval()
         env = gym.make(algo_config.task)
@@ -129,9 +129,20 @@ def train(active_policy="a", stage_idx: int = None):
         torch.save(policy.policy_b.state_dict(), target_file)
 
     # 终止函数
-    def stop_fn(mean_reward: float, reward_std: float) -> bool:
-        return ((mean_reward > 35) and (reward_std < 5)) or \
-            ((mean_reward > 50) and (reward_std < 10))
+    def make_stop_fn():
+        counter = [0]  # 使用列表保存可变状态
+        def stop_fn(mean_reward: float, reward_std: float) -> bool:
+            # 判断条件
+            condition = ((mean_reward > 32) and (reward_std < 3)) or \
+                        ((mean_reward > 50) and (reward_std < 8))
+            if condition:
+                counter[0] += 1
+            else:
+                counter[0] = 0
+            # 当连续满足3次条件时返回True
+            return counter[0] >= 3
+        return stop_fn
+    stop_fn = make_stop_fn()
 
     # 存储checkpoint
     def save_checkpoint_fn(epoch, env_step, gradient_step):
