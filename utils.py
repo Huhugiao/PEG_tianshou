@@ -31,7 +31,7 @@ def reward_calculate(tracker, target, base):
         info['reason'] = 'Attacker reached the base'
     elif current_target_distance <= task_config.pixel_size:  # Tracker catches target
         reward = 50  # Tracker reward
-        terminated = True
+        truncated = True
         info['reason'] = 'Defender intercepted the attacker'
     else:
         # Distance-based components (normalized 0-1)

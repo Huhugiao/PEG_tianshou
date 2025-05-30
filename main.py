@@ -89,7 +89,8 @@ def train(active_policy="a", stage_idx: int = None):
         load_policy_state(policy, ckpt_path)
         policy.eval()
         env = gym.make(algo_config.task)
-        collector = Collector(policy, env, exploration_noise=True)
+        collector = Collector(policy, env)
+        collector.reset()
         # Collect one episode with rendering
         result = collector.collect(n_episode=1, render=1/24)
         # 直接打印奖励信息

@@ -294,3 +294,7 @@ def policy_maker():
     policies = Policies(tracker_policy, target_policy)
 
     return policies, optim_target, optim_tracker
+
+if __name__ == "__main__":
+    policy, optim_target, optim_tracker = policy_maker()
+    print (policy)
