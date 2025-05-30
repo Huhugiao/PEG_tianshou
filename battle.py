@@ -8,7 +8,7 @@ import algo_config
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 from policy import policy_maker
-from gym.envs.user.vcollector import VCollector
+from vcollector import VCollector
 
 # 自定义函数，用于以数值排序文件名
 def numerical_key(f):
