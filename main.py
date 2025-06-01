@@ -61,7 +61,7 @@ def train(active_policy="a", stage_idx: int = None):
     train_collector.collect(n_step=algo_config.batch_size * algo_config.training_num)
 
     root_log = algo_config.logdir
-    events_folder = "events"
+    events_folder = "events" if algo_config.mission in [0,2] else os.path.join("events", "others")
     tb_log = os.path.join(root_log, events_folder)
     os.makedirs(tb_log, exist_ok=True)
 
@@ -85,7 +85,7 @@ def train(active_policy="a", stage_idx: int = None):
         np.random.seed(None)
         print(f"Loading agent under {root_log}")
         algo_config.mission = 1
-        ckpt_path = os.path.join(root_log, "stage_policies", "policy29.pth")
+        ckpt_path = os.path.join(root_log, "stage_policies", "policy60.pth")
         load_policy_state(policy, ckpt_path)
         policy.eval()
         env = gym.make(algo_config.task)
@@ -199,7 +199,7 @@ def alt_train():
     initial_epoch = algo_config.epoch
     algo_config.resume = False  # Reset resume flag for new training
     
-    for i in range(0, 30):
+    for i in range(0, 61):
         if i == 0:
             algo_config.mission = 0
             active_policy = "a"

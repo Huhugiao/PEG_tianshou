@@ -63,6 +63,6 @@ resume = False              # Resume training from a checkpoint
 using_tensorboard = True    # Log with Tensorboard (else Wandb will be used)
 
 wb_project = "protect_vs_invade"  # Weights & Biases project name
-wb_name = "_adjusting_42"         # Experiment name for logging
+wb_name = "_adjusting_43"         # Experiment name for logging
 logdir = os.path.join("tblogs", wb_project + wb_name)  # Log directory
 run_id = "16"                     # Run identifier
