@@ -133,7 +133,7 @@ def train(active_policy="a", stage_idx: int = None):
         counter = [0]  # 使用列表保存可变状态
         def stop_fn(mean_reward: float, reward_std: float) -> bool:
             # 判断条件
-            condition = ((mean_reward > 32) and (reward_std < 3)) or \
+            condition = ((mean_reward > 30) and (reward_std < 3)) or \
                         ((mean_reward > 50) and (reward_std < 8))
             if condition:
                 counter[0] += 1
@@ -198,12 +198,14 @@ def train(active_policy="a", stage_idx: int = None):
 def alt_train():
     initial_epoch = algo_config.epoch
     algo_config.resume = False  # Reset resume flag for new training
+    epoch_b = 0
     
-    for i in range(0, 61):
+    for i in range(0, 400):
         if i == 0:
             algo_config.mission = 0
             active_policy = "a"
             algo_config.epoch = initial_epoch  # Set initial epoch value
+            epoch_a = train(active_policy=active_policy, stage_idx=i)
         else:
             mission = 1 + ((i - 1) % 2)  # Alternates between 1 and 2
             algo_config.mission = mission
@@ -211,15 +213,15 @@ def alt_train():
             # Set active policy based on mission
             if mission == 1:
                 active_policy = "b"  # Target policy
-                algo_config.epoch = epoch + initial_epoch
+                algo_config.epoch = epoch_b + initial_epoch
                 print(f"Training target, epoch {algo_config.epoch}, stage {i}")
+                epoch_b = train(active_policy=active_policy, stage_idx=i)
             else:
                 active_policy = "a"  # Tracker policy
-                algo_config.epoch = epoch + initial_epoch
+                algo_config.epoch = epoch_a + initial_epoch
                 print(f"Training tracker, epoch {algo_config.epoch}, stage {i}")
-    
-        # 传入当前阶段 i，训练结束时将会保存为 policy_stage_i.pth
-        epoch = train(active_policy=active_policy, stage_idx=i)
+                epoch_a = train(active_policy=active_policy, stage_idx=i)
+
         algo_config.resume = True
 
 
