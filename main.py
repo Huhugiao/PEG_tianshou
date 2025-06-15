@@ -85,7 +85,7 @@ def train(active_policy="a", stage_idx: int = None):
         np.random.seed(None)
         print(f"Loading agent under {root_log}")
         algo_config.mission = 1
-        ckpt_path = os.path.join(root_log, "stage_policies", "policy60.pth")
+        ckpt_path = os.path.join(root_log, "stage_policies", "policy15.pth")
         load_policy_state(policy, ckpt_path)
         policy.eval()
         env = gym.make(algo_config.task)
