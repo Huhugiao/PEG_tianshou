@@ -58,11 +58,11 @@ god_view_dim = 4             # Dimension for privileged observations
 # ================================
 # Checkpoint & Logging
 # ================================
-watch_agent = 0             # If enabled, load agent for demo/test instead of training
+watch_agent = 1             # If enabled, load agent for demo/test instead of training
 resume = False              # Resume training from a checkpoint
 using_tensorboard = True    # Log with Tensorboard (else Wandb will be used)
 
 wb_project = "protect_vs_invade"  # Weights & Biases project name
-wb_name = "_adjusting_44"         # Experiment name for logging
+wb_name = "_adjusting_43"         # Experiment name for logging
 logdir = os.path.join("tblogs", wb_project + wb_name)  # Log directory
 run_id = "16"                     # Run identifier

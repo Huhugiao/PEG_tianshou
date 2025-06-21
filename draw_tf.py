@@ -37,39 +37,66 @@ def load_scalars_from_dir(event_dir: str, tag: str):
                 print(f"忽略文件 {event_file}：{e}")
     return series
 
+def downsample_data(x, y, max_points=1000):
+    """
+    如果数据量超过 max_points，则下采样，否则直接返回原数据
+    """
+    if len(x) <= max_points:
+        return x, y
+    indices = np.linspace(0, len(x)-1, max_points, dtype=int)
+    return [x[i] for i in indices], [y[i] for i in indices]
+
 def plot_comparison(tracker_dir: str,
                     target_dir: str,
                     tag: str,
-                    label1: str = "tracker",
-                    label2: str = "target",
-                    save_path: str = None):
+                    label1: str = "tracker policy",
+                    label2: str = "target policy",
+                    save_path: str = None,
+                    max_points: int = 1000):
     # 读数据：每个目录可能包含多个 event 文件
     tracker_series = load_scalars_from_dir(tracker_dir, tag)
     target_series  = load_scalars_from_dir(target_dir, tag)
 
-    plt.figure(figsize=(8,5))
+    # 构造交替排列的列表：
+    # tracker 的事件顺序为 0,2,4,...; target 的事件顺序为 1,3,5,...
+    combined = []
+    for i, series in enumerate(tracker_series):
+        combined.append(("tracker", 2 * i, series))
+    for i, series in enumerate(target_series):
+        combined.append(("target", 2 * i + 1, series))
+    combined.sort(key=lambda x: x[1])
+
+    plt.figure(figsize=(15,5))
     
-    # 固定颜色：同一文件夹内所有曲线采用相同颜色
     tracker_color = "blue"
     target_color = "red"
-    
-    # 绘制 tracker 目录下的每个 event 文件
-    for i, (s, v) in enumerate(tracker_series):
-        current_label = label1 if i == 0 else None
-        # 原始曲线，设置透明度以实现淡化
-        plt.plot(s, v, '-', color=tracker_color, alpha=0.3, linewidth=2, label=current_label)
-        # 计算平滑曲线
-        smooth_v = gaussian_filter1d(np.array(v), sigma=5)
-        plt.plot(s, smooth_v, '-', color=tracker_color, linewidth=2)
-    
-    # 绘制 target 目录下的每个 event 文件
-    for i, (s, v) in enumerate(target_series):
-        current_label = label2 if i == 0 else None
-        plt.plot(s, v, '-', color=target_color, alpha=0.3, linewidth=2, label=current_label)
-        smooth_v = gaussian_filter1d(np.array(v), sigma=5)
-        plt.plot(s, smooth_v, '-', color=target_color, linewidth=2)
+    tracker_label_shown = False
+    target_label_shown = False
 
-    plt.xlabel("step")
+    for agent, order, (s, v) in combined:
+        # 使用一个独立区间绘制该 tfevents 曲线：区间为 [order, order+1]
+        # 重新生成横坐标，不再使用原来的 step 数据，确保不同 tfevents 曲线横坐标不会重合
+        x = np.linspace(order, order+1, len(s))
+        # 下采样处理
+        down_x, down_v = downsample_data(x.tolist(), v, max_points)
+        if agent == "tracker":
+            current_label = label1 if not tracker_label_shown else None
+            tracker_label_shown = True
+            color = tracker_color
+        else:
+            current_label = label2 if not target_label_shown else None
+            target_label_shown = True
+            color = target_color
+        
+        # 绘制原始数据曲线（淡化样式）
+        plt.plot(down_x, down_v, '-', color=color, alpha=0.3, linewidth=2, label=current_label)
+        
+        # 计算平滑后的数据和下采样
+        smooth_v = gaussian_filter1d(np.array(v), sigma=5)
+        down_x_smooth, down_smooth_v = downsample_data(x.tolist(), smooth_v.tolist(), max_points)
+        plt.plot(down_x_smooth, down_smooth_v, '-', color=color, linewidth=2)
+
+    plt.xlabel("Epochs")
     plt.ylabel(tag)
     plt.title(f"{tag} comparison")
     plt.legend()

@@ -29,9 +29,9 @@ max_loss_step = 50  # 最大丢失步数
 total_steps = 500  # 总步数限制
 
 # 加载图像资源
-tracker_img = pygame.image.load("./robot.png") 
-target_img = pygame.image.load("./running_kid.png") 
-base_img = pygame.image.load("./blue_base.png")
+tracker_img = pygame.image.load("./pic/robot.png") 
+target_img = pygame.image.load("./pic/running_kid.png") 
+base_img = pygame.image.load("./pic/blue_base.png")
 
 # 障碍物种类的概率分布
 obstacle_kind_probability = [0.4, 0.1, 0.1, 0.2, 0.2]  # 不同类型障碍物出现的概率
