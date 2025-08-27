@@ -25,10 +25,22 @@ def train(active_policy="a", stage_idx: int = None):
 
     # 构建训练环境和测试环境（传入共享模型）
     train_envs = SubprocVectorEnv([
-        lambda: gym.make(algo_config.task) 
+        lambda: gym.make(
+            algo_config.task,
+            mission=algo_config.mission,
+            base_obs_dim=algo_config.base_obs_dim,
+            use_god_view=algo_config.use_god_view,
+            god_view_dim=algo_config.god_view_dim
+        ) 
         for _ in range(algo_config.training_num)])
     test_envs = SubprocVectorEnv([
-        lambda: gym.make(algo_config.task)
+        lambda: gym.make(
+            algo_config.task,
+            mission=algo_config.mission,
+            base_obs_dim=algo_config.base_obs_dim,
+            use_god_view=algo_config.use_god_view,
+            god_view_dim=algo_config.god_view_dim
+        )
         for _ in range(algo_config.training_num)])
 
     # 设置随机数种子
@@ -39,6 +51,7 @@ def train(active_policy="a", stage_idx: int = None):
 
     policy, optim_target, optim_tracker = policy_maker()
     policy.set_active_policy(active_policy)
+    policy.set_mission(algo_config.mission) 
 
     # buffer
     if algo_config.prioritized_replay:
@@ -84,11 +97,17 @@ def train(active_policy="a", stage_idx: int = None):
     if algo_config.watch_agent:
         np.random.seed(None)
         print(f"Loading agent under {root_log}")
-        algo_config.mission = 1
-        ckpt_path = os.path.join(root_log, "stage_policies", "policy15.pth")
+        mission_value = 1  # You can change this as needed
+        env = gym.make(
+            algo_config.task,
+            mission=mission_value,
+            base_obs_dim=algo_config.base_obs_dim,
+            use_god_view=algo_config.use_god_view,
+            god_view_dim=algo_config.god_view_dim
+        )
+        ckpt_path = os.path.join(root_log, "stage_policies", "policy255.pth")
         load_policy_state(policy, ckpt_path)
         policy.eval()
-        env = gym.make(algo_config.task)
         collector = Collector(policy, env)
         collector.reset()
         # Collect one episode with rendering

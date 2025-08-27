@@ -8,7 +8,7 @@ import io  # 导入io模块替代pandas.compat.StringIO
 current_dir = os.path.dirname(__file__)
 rank_path = os.path.join(
     current_dir, '..',
-    'tblogs/protect_vs_invade_adjusting_43',
+    'tblogs/protect_vs_invade_adjusting_44',
     'agent_rankings.csv'
 )
 
@@ -43,7 +43,7 @@ tracker_df = tracker_df.sort_values('stage')
 target_df = target_df.sort_values('stage')
 
 # 创建图表
-plt.figure(figsize=(12, 6))
+plt.figure(figsize=(18, 6))
 
 # 绘制Tracker曲线（蓝色）
 plt.plot(tracker_df['stage'], tracker_df['overall_win_rate'], 

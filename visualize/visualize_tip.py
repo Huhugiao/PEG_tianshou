@@ -32,7 +32,7 @@ z_ho = z_hi_raw + lower_h
 
 rank_path = os.path.join(
     os.path.dirname(__file__),'..',
-    'tblogs/protect_vs_invade_adjusting_43',
+    'tblogs/protect_vs_invade_adjusting_44',
     'agent_rankings.csv'
 )
 lines = open(rank_path).read().splitlines()
@@ -113,7 +113,7 @@ ax.legend(loc='upper right')
 
 ax.set_zlim(0, max_h)
 ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Win-rate (%)')
-ax.set_title('Agent Rankings in Spinning Tip')
+ax.set_title('Agent Rankings in Spinning Top')
 ax.view_init(azim=60, elev=30)
 
 lines_list = []

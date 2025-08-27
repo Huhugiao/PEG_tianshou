@@ -14,7 +14,12 @@ class Policies(nn.Module):
         super().__init__()
         self.policy_a = policy_a  
         self.policy_b = policy_b 
-        self.active_policy = "a" 
+        self.active_policy = "a"
+        self.mission = 0  # Default mission
+        
+    def set_mission(self, mission: int):
+        """Set the current mission type"""
+        self.mission = mission
     
     def set_active_policy(self, policy_name: str):
         """Set which policy is being trained (a or b)"""
@@ -24,25 +29,22 @@ class Policies(nn.Module):
             raise ValueError("policy_name must be 'a' or 'b'")
     
     def forward(self, batch, state=None, **kwargs):
-        """获取两个智能体的动作，根据 mission 决定输出形式"""
+        """获取两个智能体的动作，根据当前激活的策略决定输出形式"""
         # 始终先算出 A/B 两套结果
         result_a = self.policy_a(batch, state, **kwargs)
         with torch.no_grad():
             result_b = self.policy_b(batch, state)
 
-        # 单智能体模式：只用 A 的输出
-        if algo_config.mission == 0:
+        # 如果当前是tracker激活状态，则使用A的结果作为主要结果
+        if self.active_policy == "a":
             result = result_a
-            result.act = result_a.act
         else:
-            # 双智能体模式：选一个结果作"主"返回，但保留两个子动作
-            if self.active_policy == "a":
-                result = result_a
-            else:
-                result = result_b
-            result.tracker_act = result_a.act
-            result.target_act = result_b.act
-            result.act = result_a.act + result_b.act / 100.0
+            result = result_b
+        
+        # 无论是什么模式，都计算组合动作（确保双智能体功能正常）
+        result.tracker_act = result_a.act
+        result.target_act = result_b.act
+        result.act = result_a.act + result_b.act / 100.0
         
         return result
     
@@ -181,13 +183,14 @@ class Policies(nn.Module):
 class CustomPPOPolicy(PPOPolicy):
     def process_fn(self, batch: Batch, buffer: ReplayBuffer, indices: np.ndarray) -> Batch:
         """重写process_fn以在原始处理前解码动作"""
-        # 不需要使用额外的属性，直接判断mission和策略类型即可
-        if algo_config.mission != 0:
-            if algo_config.mission == 2:
-                        batch.act = np.floor(batch.act).astype(np.int64)
-            else:
-                # 提取小数部分*100作为target动作
-                batch.act = np.round((batch.act - np.floor(batch.act)) * 100).astype(np.int64)
+        # Store original actions for potential future use
+        batch.original_act = batch.act.copy()
+        
+        # Extract action part based on policy type
+        if isinstance(self, type(policy_maker()[0].policy_a)):  # Is tracker policy
+            batch.act = np.floor(batch.act).astype(np.int64)
+        else:  # Is target policy
+            batch.act = np.round((batch.act - np.floor(batch.act)) * 100).astype(np.int64)
                     
         # 调用父类方法完成剩余处理
         return super().process_fn(batch, buffer, indices)

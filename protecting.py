@@ -1,14 +1,12 @@
-import gym, os, torch
+import gym
 from gym import spaces
 import numpy as np
 import pygame
 import sys
 import time
 from gym import spaces
-import task_config,algo_config
-import utils
+import task_config, utils
 from typing import Optional
-from gym.spaces import MultiDiscrete
 
 class TrackingEnv(gym.Env):
     """
@@ -19,7 +17,24 @@ class TrackingEnv(gym.Env):
         'render_fps': 40
     }
 
-    def __init__(self):
+    def __init__(self, mission=0, base_obs_dim=12, use_god_view=False, god_view_dim=4):
+        """
+        Initialize the tracking environment.
+        
+        Args:
+            mission (int): Determines which agent is being trained
+                           0: train tracker (target uses rules)
+                           1: train target (tracker uses policy)
+                           2: train tracker (target uses policy)
+            base_obs_dim (int): Dimension of base observation features
+            use_god_view (bool): Whether to use privileged information
+            god_view_dim (int): Dimension of privileged observation features
+        """
+        self.mission = mission
+        self.base_obs_dim = base_obs_dim
+        self.use_god_view = use_god_view
+        self.god_view_dim = god_view_dim
+        
         self.canvas = None
         self.tracker = None
         self.target = None
@@ -49,9 +64,9 @@ class TrackingEnv(gym.Env):
         self.last_target_pos = None
 
         # 新的观测空间定义
-        obs_dim = algo_config.base_obs_dim
-        if algo_config.use_god_view:
-            obs_dim += algo_config.god_view_dim
+        obs_dim = self.base_obs_dim
+        if self.use_god_view:
+            obs_dim += self.god_view_dim
         self.observation_space = spaces.Box(
             low=-1, high=1, 
             shape=(obs_dim,), 
@@ -109,7 +124,7 @@ class TrackingEnv(gym.Env):
         old_target = self.target.copy()
 
         # 处理动作，根据 mission 区分
-        if algo_config.mission == 0:
+        if self.mission == 0:
             tracker_action = int(action)
             self.tracker = utils.agent_move(old_tracker, tracker_action, self.tracker_speed)
             # 注意 target_nav 返回多一个角度信息，新角度将写入 target['theta']
@@ -143,7 +158,7 @@ class TrackingEnv(gym.Env):
 
         # 计算奖励
         reward, terminated, truncated, info = utils.reward_calculate(
-            self.tracker, self.target, self.base)
+            self.tracker, self.target, self.base, mission=self.mission)
 
         # 更新观测
         self.current_obs = self._get_obs_features()
