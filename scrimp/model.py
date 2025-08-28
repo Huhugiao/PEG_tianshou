@@ -7,215 +7,142 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from alg_parameters import *
 from nets import ProtectingNet
 
+
 class Model(object):
     """Standard PPO model for Protecting environment - single agent"""
 
     def __init__(self, device, global_model=False):
-        """Initialize model"""
         self.device = device
         self.network = ProtectingNet().to(device)
-        
+
         if global_model:
             self.net_optimizer = torch.optim.Adam(
                 self.network.parameters(),
                 lr=TrainingParameters.lr
             )
             self.net_scaler = GradScaler()
-        
+
         self.network.train()
 
-    def step(self, vector, hidden_state=None):
-        """Single step inference for data collection"""
-        with torch.no_grad():
-            # 确保输入是正确的tensor格式
-            if isinstance(vector, np.ndarray):
-                input_vector = torch.FloatTensor(vector).to(self.device)
-            else:
-                input_vector = torch.FloatTensor([vector]).to(self.device)
-            
-            # 确保批次维度
-            if input_vector.dim() == 1:
-                input_vector = input_vector.unsqueeze(0)
-            
-            # Forward pass
-            policy, value, _ = self.network(input_vector)
-            
-            # Convert to numpy
-            policy = policy.cpu().numpy()
-            value = value.cpu().numpy()
-            
-            # 获取当前智能体的策略
-            prob = policy[0].copy()
-            # 确保概率和为1且非负
-            prob = np.maximum(prob, 1e-8)
-            prob = prob / prob.sum()
-            
-            # 采样动作
-            action = np.random.choice(EnvParameters.N_ACTIONS, p=prob)
-            
-            return action, hidden_state, value, prob
+    def _to_tensor(self, vector):
+        if isinstance(vector, np.ndarray):
+            input_vector = torch.from_numpy(vector).float().to(self.device)
+        elif torch.is_tensor(vector):
+            input_vector = vector.to(self.device).float()
+        else:
+            input_vector = torch.tensor(vector, dtype=torch.float32, device=self.device)
+        if input_vector.dim() == 1:
+            input_vector = input_vector.unsqueeze(0)
+        return input_vector
 
+    @torch.no_grad()
+    def step(self, vector, hidden_state=None):
+        input_vector = self._to_tensor(vector)
+        policy, value, _ = self.network(input_vector)
+        prob = policy[0].clamp_min(1e-8)
+        prob = prob / prob.sum()
+        action = int(torch.multinomial(prob, 1).item())
+        return action, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy()
+
+    @torch.no_grad()
     def evaluate(self, vector, hidden_state=None, greedy=True):
-        """Evaluation mode for training evaluation"""
-        with torch.no_grad():
-            # 处理输入
-            if isinstance(vector, np.ndarray):
-                input_vector = torch.from_numpy(vector).float().to(self.device)
-            else:
-                input_vector = torch.FloatTensor([vector]).to(self.device)
-            
-            if input_vector.dim() == 1:
-                input_vector = input_vector.unsqueeze(0)
-            
-            # Forward pass
-            policy, value, _ = self.network(input_vector)
-            
-            policy = policy.cpu().numpy()
-            value = value.cpu().numpy()
-            
-            # 获取当前智能体的策略
-            prob = policy[0].copy()
-            prob = np.maximum(prob, 1e-8)
-            prob = prob / prob.sum()
-            
-            if greedy:
-                eval_action = np.argmax(prob)
-            else:
-                eval_action = np.random.choice(EnvParameters.N_ACTIONS, p=prob)
-            
-            return eval_action, hidden_state, value, policy
+        input_vector = self._to_tensor(vector)
+        policy, value, _ = self.network(input_vector)
+        prob = policy[0].clamp_min(1e-8)
+        prob = prob / prob.sum()
+        action = int(torch.argmax(prob).item()) if greedy else int(torch.multinomial(prob, 1).item())
+        return action, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy()
 
     def train(self, vector, returns, values, actions, old_probs, hidden_state, train_valid=None, blocking=None, message=None):
-        """Simplified PPO training"""
         self.net_optimizer.zero_grad()
-        
-        # Convert to tensors
-        vector = torch.from_numpy(vector).float().to(self.device)
-        returns = torch.from_numpy(returns).float().to(self.device)
-        values = torch.from_numpy(values).float().to(self.device)
-        actions = torch.from_numpy(actions).long().to(self.device)
-        old_probs = torch.from_numpy(old_probs).float().to(self.device)
-        
-        # 确保维度正确
+
+        vector = torch.as_tensor(vector, dtype=torch.float32, device=self.device)
+        returns = torch.as_tensor(returns, dtype=torch.float32, device=self.device)
+        values = torch.as_tensor(values, dtype=torch.float32, device=self.device)
+        actions = torch.as_tensor(actions, dtype=torch.long, device=self.device)
+        old_probs = torch.as_tensor(old_probs, dtype=torch.float32, device=self.device)
+
         if vector.dim() == 1:
             vector = vector.unsqueeze(0)
-        if returns.dim() == 0:
-            returns = returns.unsqueeze(0)
         if values.dim() > 1:
-            values = values.squeeze()
+            values = values.squeeze(-1)
         if returns.dim() > 1:
-            returns = returns.squeeze()
-        if actions.dim() == 0:
-            actions = actions.unsqueeze(0)
-        
-        # 处理old_probs的维度
+            returns = returns.squeeze(-1)
         if old_probs.dim() == 1:
             old_probs = old_probs.unsqueeze(0)
-            
-        # Calculate advantages
+
         advantages = returns - values
         if advantages.numel() > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        
+
         with autocast():
-            # Forward pass
-            new_policy, new_values, _ = self.network(vector)
-            
-            new_values = new_values.squeeze()
-            
-            # 计算动作概率 - 现在policy是[batch_size, n_actions]
+            new_policy, new_values, logits = self.network(vector)    # [B, A], [B,1], [B,A]
+            new_values = new_values.squeeze(-1)
             new_action_probs = new_policy.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
             old_action_probs = old_probs.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
-            
-            # PPO ratio和clip
+
             ratio = new_action_probs / (old_action_probs + 1e-8)
             surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1.0 - TrainingParameters.CLIP_RANGE, 
-                               1.0 + TrainingParameters.CLIP_RANGE) * advantages
+            surr2 = torch.clamp(ratio, 1.0 - TrainingParameters.CLIP_RANGE, 1.0 + TrainingParameters.CLIP_RANGE) * advantages
             policy_loss = -torch.mean(torch.min(surr1, surr2))
-            
-            # Value loss
-            value_loss = F.mse_loss(new_values, returns)
-            
-            # Entropy loss
+
             entropy = -torch.mean(torch.sum(new_policy * torch.log(new_policy + 1e-8), dim=-1))
-            
-            # Total loss
-            total_loss = policy_loss + TrainingParameters.EX_VALUE_COEF * value_loss - \
-                        TrainingParameters.ENTROPY_COEF * entropy
-        
-        # Backpropagation
+            value_loss = torch.mean((returns - new_values) ** 2)
+            total_loss = policy_loss + TrainingParameters.EX_VALUE_COEF * value_loss - TrainingParameters.ENTROPY_COEF * entropy
+
         self.net_scaler.scale(total_loss).backward()
         self.net_scaler.unscale_(self.net_optimizer)
-        
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.network.parameters(), 
-                                                  TrainingParameters.MAX_GRAD_NORM)
-        
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.network.parameters(), TrainingParameters.MAX_GRAD_NORM)
         self.net_scaler.step(self.net_optimizer)
         self.net_scaler.update()
-        
-        # Calculate clipfrac
+
         clipfrac = torch.mean((torch.abs(ratio - 1.0) > TrainingParameters.CLIP_RANGE).float())
-        
-        return [total_loss.cpu().detach().numpy(), 
-                policy_loss.cpu().detach().numpy(),
-                entropy.cpu().detach().numpy(),
-                value_loss.cpu().detach().numpy(),
-                value_loss.cpu().detach().numpy(),
-                0.0, 0.0,  # valid_loss, blocking_loss (unused)
-                clipfrac.cpu().detach().numpy(),
-                grad_norm.cpu().detach().numpy(),
-                advantages.mean().cpu().detach().numpy()]
+
+        return [float(total_loss.detach().cpu().numpy()),
+                float(policy_loss.detach().cpu().numpy()),
+                float(entropy.detach().cpu().numpy()),
+                float(value_loss.detach().cpu().numpy()),
+                float(value_loss.detach().cpu().numpy()),
+                0.0,
+                0.0,
+                float(clipfrac.detach().cpu().numpy()),
+                float(grad_norm.detach().cpu().numpy()),
+                float(advantages.mean().detach().cpu().numpy())]
 
     def imitation_train(self, vector, optimal_actions, hidden_state=None):
-        """Imitation learning training"""
         self.net_optimizer.zero_grad()
-        
-        vector = torch.from_numpy(vector).float().to(self.device)
-        optimal_actions = torch.from_numpy(optimal_actions).long().to(self.device)
-        
+
+        vector = torch.as_tensor(vector, dtype=torch.float32, device=self.device)
+        optimal_actions = torch.as_tensor(optimal_actions, dtype=torch.long, device=self.device)
+
         if vector.dim() == 1:
             vector = vector.unsqueeze(0)
         if optimal_actions.dim() == 0:
             optimal_actions = optimal_actions.unsqueeze(0)
-        
+
         with autocast():
-            # Forward pass
-            _, _, logits = self.network(vector)
-            
-            # 现在logits是[batch_size, n_actions]，直接计算交叉熵损失
-            imitation_loss = F.cross_entropy(logits, optimal_actions)
-        
+            policy, _, logits = self.network(vector)
+            imitation_loss = torch.nn.functional.cross_entropy(logits, optimal_actions)
+
         self.net_scaler.scale(imitation_loss).backward()
         self.net_scaler.unscale_(self.net_optimizer)
-        
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.network.parameters(), 
-                                                  TrainingParameters.MAX_GRAD_NORM)
-        
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.network.parameters(), TrainingParameters.MAX_GRAD_NORM)
         self.net_scaler.step(self.net_optimizer)
         self.net_scaler.update()
-        
-        return [imitation_loss.cpu().detach().numpy(), 
-                grad_norm.cpu().detach().numpy()]
 
+        return [float(imitation_loss.detach().cpu().numpy()),
+                float(grad_norm.detach().cpu().numpy())]
+
+    @torch.no_grad()
     def set_weights(self, weights):
-        """Load global weights to local model"""
         self.network.load_state_dict(weights)
 
+    @torch.no_grad()
     def get_weights(self):
-        """Get current model weights"""
         return self.network.state_dict()
 
+    @torch.no_grad()
     def value(self, vector):
-        """Predict state value"""
-        with torch.no_grad():
-            if isinstance(vector, np.ndarray):
-                input_vector = torch.from_numpy(vector).float().to(self.device)
-            else:
-                input_vector = torch.FloatTensor([vector]).to(self.device)
-            
-            if input_vector.dim() == 1:
-                input_vector = input_vector.unsqueeze(0)
-            
-            _, value, _ = self.network(input_vector)
-            return value.cpu().numpy()
+        input_vector = self._to_tensor(vector)
+        _, value, _ = self.network(input_vector)
+        return float(value.squeeze().cpu().numpy())

@@ -1,1 +1,0 @@
-{'seed': 1234, 'n_envs': 16, 'n_steps': 1024, 'learning_rate': 1e-05, 'max_steps': 30000000.0, 'episode_len': 256, 'n_actions': 48}

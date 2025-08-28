@@ -1,0 +1,2 @@
+total_episodes,avg_steps,avg_reward,tracker_win_rate,target_win_rate,draw_rate,tracker_type,target_type
+100,38.57,18.34192821254485,1.0,0.0,0.0,rule,expert_rule

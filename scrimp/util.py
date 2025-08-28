@@ -1,13 +1,24 @@
+import os
+import os.path as osp
 import random
-import imageio
 import numpy as np
 import torch
-import wandb
+from typing import Dict, List, Optional
+
+try:
+    import imageio
+except Exception:
+    imageio = None
+
+try:
+    import wandb
+except Exception:
+    wandb = None
 
 from alg_parameters import *
 
-def set_global_seeds(i):
-    """Set seed for fair comparison"""
+
+def set_global_seeds(i: int):
     torch.manual_seed(i)
     torch.cuda.manual_seed(i)
     torch.cuda.manual_seed_all(i)
@@ -15,97 +26,102 @@ def set_global_seeds(i):
     random.seed(i)
     torch.backends.cudnn.deterministic = True
 
-def write_to_tensorboard(global_summary, step, performance_dict=None, mb_loss=None, imitation_loss=None, evaluate=True,
-                         greedy=True):
-    """Record performance using tensorboard"""
-    if imitation_loss is not None:
-        global_summary.add_scalar(tag='Loss/Imitation_loss', scalar_value=imitation_loss[0], global_step=step)
-        global_summary.add_scalar(tag='Grad/Imitation_grad', scalar_value=imitation_loss[1], global_step=step)
-        global_summary.flush()
-        return
-        
-    if evaluate:
-        if greedy:
-            global_summary.add_scalar(tag='Perf_greedy_eval/Reward', scalar_value=performance_dict['per_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_greedy_eval/In_Reward', scalar_value=performance_dict['per_in_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_greedy_eval/Ex_Reward', scalar_value=performance_dict['per_ex_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_greedy_eval/Valid_rate', scalar_value=performance_dict['per_valid_rate'], global_step=step)
-            global_summary.add_scalar(tag='Perf_greedy_eval/Episode_length', scalar_value=performance_dict['per_episode_len'], global_step=step)
-            
-        else:
-            global_summary.add_scalar(tag='Perf_random_eval/Reward', scalar_value=performance_dict['per_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_random_eval/In_Reward', scalar_value=performance_dict['per_in_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_random_eval/Ex_Reward', scalar_value=performance_dict['per_ex_r'], global_step=step)
-            global_summary.add_scalar(tag='Perf_random_eval/Valid_rate', scalar_value=performance_dict['per_valid_rate'], global_step=step)
-            global_summary.add_scalar(tag='Perf_random_eval/Episode_length', scalar_value=performance_dict['per_episode_len'], global_step=step)
-            
-    else:
-        loss_vals = np.nanmean(mb_loss, axis=0)
-        global_summary.add_scalar(tag='Perf/Reward', scalar_value=performance_dict['per_r'], global_step=step)
-        global_summary.add_scalar(tag='Perf/In_Reward', scalar_value=performance_dict['per_in_r'], global_step=step)
-        global_summary.add_scalar(tag='Perf/Ex_Reward', scalar_value=performance_dict['per_ex_r'], global_step=step)
-        global_summary.add_scalar(tag='Perf/Valid_rate', scalar_value=performance_dict['per_valid_rate'], global_step=step)
-        global_summary.add_scalar(tag='Perf/Episode_length', scalar_value=performance_dict['per_episode_len'], global_step=step)
-        global_summary.add_scalar(tag='Perf/Rewarded_rate', scalar_value=performance_dict['rewarded_rate'], global_step=step)
 
-        for (val, name) in zip(loss_vals, RecordingParameters.LOSS_NAME):
-            if name == 'grad_norm':
-                global_summary.add_scalar(tag='Grad/' + name, scalar_value=val, global_step=step)
-            else:
-                global_summary.add_scalar(tag='Loss/' + name, scalar_value=val, global_step=step)
+def _avg(vals):
+    if vals is None:
+        return None
+    if isinstance(vals, (list, tuple)) and len(vals) > 0 and isinstance(vals[0], (list, tuple, np.ndarray)):
+        return np.nanmean(vals, axis=0)
+    if isinstance(vals, (list, tuple, np.ndarray)):
+        return float(np.nanmean(vals)) if len(vals) > 0 else 0.0
+    return vals
+
+
+def write_to_tensorboard(global_summary, step: int, performance_dict: Optional[Dict] = None,
+                         mb_loss: Optional[List] = None, imitation_loss: Optional[List] = None,
+                         evaluate: bool = True, greedy: bool = True):
+    if global_summary is None:
+        return
+
+    if imitation_loss is not None:
+        global_summary.add_scalar('Loss/Imitation_loss', imitation_loss[0], step)
+        if len(imitation_loss) > 1:
+            global_summary.add_scalar('Grad/Imitation_grad', imitation_loss[1], step)
+
+    # Performance
+    if performance_dict:
+        prefix = 'Eval' if evaluate else 'Train'
+        for k, v in performance_dict.items():
+            val = _avg(v)
+            if val is not None:
+                global_summary.add_scalar(f'{prefix}/{k}', val, step)
+
+    # Loss
+    if mb_loss:
+        loss_vals = np.nanmean(np.asarray(mb_loss, dtype=np.float32), axis=0)
+        names = getattr(RecordingParameters, 'LOSS_NAME', [
+            'total', 'policy', 'entropy', 'value', 'value_aux', 'aux1', 'aux2', 'clipfrac', 'grad_norm', 'adv_mean'
+        ])
+        for i, name in enumerate(names[:len(loss_vals)]):
+            tag = f'Loss/{name}' if 'grad' not in name else f'Grad/{name}'
+            global_summary.add_scalar(tag, float(loss_vals[i]), step)
 
     global_summary.flush()
 
-def write_to_wandb(step, performance_dict=None, mb_loss=None, imitation_loss=None, evaluate=True, greedy=True):
-    """Record performance using wandb"""
-    if imitation_loss is not None:
-        wandb.log({'Loss/Imitation_loss': imitation_loss[0]}, step=step)
-        wandb.log({'Grad/Imitation_grad': imitation_loss[1]}, step=step)
+
+def write_to_wandb(step: int, performance_dict: Optional[Dict] = None,
+                   mb_loss: Optional[List] = None, imitation_loss: Optional[List] = None,
+                   evaluate: bool = True, greedy: bool = True):
+    if wandb is None or not getattr(RecordingParameters, 'WANDB', False) or getattr(wandb, 'run', None) is None:
         return
-        
-    if evaluate:
-        if greedy:
-            wandb.log({'Perf_greedy_eval/Reward': performance_dict['per_r']}, step=step)
-            wandb.log({'Perf_greedy_eval/In_Reward': performance_dict['per_in_r']}, step=step)
-            wandb.log({'Perf_greedy_eval/Ex_Reward': performance_dict['per_ex_r']}, step=step)
-            wandb.log({'Perf_greedy_eval/Valid_rate': performance_dict['per_valid_rate']}, step=step)
-            wandb.log({'Perf_greedy_eval/Episode_length': performance_dict['per_episode_len']}, step=step)
-            
-        else:
-            wandb.log({'Perf_random_eval/Reward': performance_dict['per_r']}, step=step)
-            wandb.log({'Perf_random_eval/In_Reward': performance_dict['per_in_r']}, step=step)
-            wandb.log({'Perf_random_eval/Ex_Reward': performance_dict['per_ex_r']}, step=step)
-            wandb.log({'Perf_random_eval/Valid_rate': performance_dict['per_valid_rate']}, step=step)
-            wandb.log({'Perf_random_eval/Episode_length': performance_dict['per_episode_len']}, step=step)
-            
+
+    log_data = {}
+    if imitation_loss is not None:
+        log_data['Loss/Imitation_loss'] = imitation_loss[0]
+        if len(imitation_loss) > 1:
+            log_data['Grad/Imitation_grad'] = imitation_loss[1]
+
+    if performance_dict:
+        prefix = 'Eval' if evaluate else 'Train'
+        for k, v in performance_dict.items():
+            val = _avg(v)
+            if val is not None:
+                log_data[f'{prefix}/{k}'] = val
+
+    if mb_loss:
+        loss_vals = np.nanmean(np.asarray(mb_loss, dtype=np.float32), axis=0)
+        names = getattr(RecordingParameters, 'LOSS_NAME', [
+            'total', 'policy', 'entropy', 'value', 'value_aux', 'aux1', 'aux2', 'clipfrac', 'grad_norm', 'adv_mean'
+        ])
+        for i, name in enumerate(names[:len(loss_vals)]):
+            tag = f'Loss/{name}' if 'grad' not in name else f'Grad/{name}'
+            log_data[tag] = float(loss_vals[i])
+
+    if log_data:
+        wandb.log(log_data, step=step)
+
+
+def make_gif(images, file_name, fps=20):
+    if imageio is None:
+        print("imageio not available, skip gif")
+        return
+    if isinstance(images, list):
+        frames = [np.asarray(img, dtype=np.uint8) for img in images]
     else:
-        loss_vals = np.nanmean(mb_loss, axis=0)
-        wandb.log({'Perf/Reward': performance_dict['per_r']}, step=step)
-        wandb.log({'Perf/In_Reward': performance_dict['per_in_r']}, step=step)
-        wandb.log({'Perf/Ex_Reward': performance_dict['per_ex_r']}, step=step)
-        wandb.log({'Perf/Valid_rate': performance_dict['per_valid_rate']}, step=step)
-        wandb.log({'Perf/Episode_length': performance_dict['per_episode_len']}, step=step)
-        wandb.log({'Perf/Rewarded_rate': performance_dict['rewarded_rate']}, step=step)
+        frames = np.asarray(images, dtype=np.uint8)
+    os.makedirs(osp.dirname(file_name), exist_ok=True)
+    imageio.mimwrite(file_name, frames, duration=1.0 / max(int(fps), 1), loop=0)
+    print(f"Wrote gif: {file_name}")
 
-        for (val, name) in zip(loss_vals, RecordingParameters.LOSS_NAME):
-            if name == 'grad_norm':
-                wandb.log({'Grad/' + name: val}, step=step)
-            else:
-                wandb.log({'Loss/' + name: val}, step=step)
 
-def make_gif(images, file_name):
-    """Record gif"""
-    imageio.mimwrite(file_name, images, subrectangles=True)
-    print("Wrote gif")
-
-def update_perf(one_episode_perf, performance_dict):
-    """Record batch performance"""
-    performance_dict['per_ex_r'].append(one_episode_perf['ex_reward'])
-    performance_dict['per_in_r'].append(one_episode_perf['in_reward'])
-    performance_dict['per_r'].append(one_episode_perf['episode_reward'])
-    performance_dict['per_valid_rate'].append(
-        ((one_episode_perf['num_step'] * 2) - one_episode_perf['invalid']) / (
-                one_episode_perf['num_step'] * 2))
-    performance_dict['per_episode_len'].append(one_episode_perf['num_step'])
-    performance_dict['rewarded_rate'].append(one_episode_perf['reward_count'] / (one_episode_perf['num_step'] * 2))
+def update_perf(one_episode_perf: Dict, performance_dict: Dict):
+    performance_dict['per_ex_r'].append(one_episode_perf.get('ex_reward', 0.0))
+    performance_dict['per_in_r'].append(one_episode_perf.get('in_reward', 0.0))
+    performance_dict['per_r'].append(one_episode_perf.get('episode_reward', 0.0))
+    num_step = max(int(one_episode_perf.get('num_step', 1)), 1)
+    invalid = int(one_episode_perf.get('invalid', 0))
+    reward_count = int(one_episode_perf.get('reward_count', 0))
+    performance_dict['per_valid_rate'].append(((num_step * 2) - invalid) / (num_step * 2))
+    performance_dict['per_episode_len'].append(num_step)
+    performance_dict['rewarded_rate'].append(reward_count / (num_step * 2))
     return performance_dict

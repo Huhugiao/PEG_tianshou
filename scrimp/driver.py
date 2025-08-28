@@ -1,33 +1,51 @@
 import os
 import os.path as osp
+import math
 import numpy as np
 import torch
 import ray
-import wandb
-import setproctitle
-import imageio
-import math
+
+try:
+    import setproctitle
+except Exception:
+    setproctitle = None
+
 from torch.utils.tensorboard import SummaryWriter
 
 from alg_parameters import *
-from episodic_buffer import EpisodicBuffer
 from env import TrackingEnv
 from model import Model
 from runner import Runner
 from util import set_global_seeds, write_to_tensorboard, write_to_wandb, make_gif
 
-# Add IL cosine annealing parameters
-IL_INITIAL_PROB = 0.9  # Start with 90% IL
-IL_FINAL_PROB = 0.1    # End with 10% IL
-IL_DECAY_STEPS = int(TrainingParameters.N_MAX_STEPS * 0.5)  # Decay over first 50% of training
+try:
+    import wandb
+except Exception:
+    wandb = None
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-ray.init(num_gpus=SetupParameters.NUM_GPU)
-print("Welcome to SCRIMP on Protecting Environment!\n") 
+# IL cosine annealing
+IL_INITIAL_PROB = 0.0
+IL_FINAL_PROB = 0.0
+IL_DECAY_STEPS = int(TrainingParameters.N_MAX_STEPS * 0.5)
+
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
+if not ray.is_initialized():
+    ray.init(num_gpus=SetupParameters.NUM_GPU)
+print("Welcome to SCRIMP on Protecting Environment!\n")
 print(f"Training agent: {TrainingParameters.AGENT_TO_TRAIN} with {TrainingParameters.OPPONENT_TYPE} opponent")
-print(f"IL probability will cosine anneal from {IL_INITIAL_PROB*100}% to {IL_FINAL_PROB*100}% over {IL_DECAY_STEPS} steps")
+print(f"IL probability will cosine anneal from {IL_INITIAL_PROB*100:.1f}% to {IL_FINAL_PROB*100:.1f}% over {IL_DECAY_STEPS} steps")
 
-# 创建所有参数字典用于wandb配置
+# Defaults for missing RecordingParameters fields
+def_attr = lambda name, default: getattr(RecordingParameters, name, default)
+SUMMARY_PATH = def_attr('SUMMARY_PATH', f'./runs/TrackingEnv/{RecordingParameters.EXPERIMENT_NAME}{RecordingParameters.TIME}')
+MODEL_PATH = def_attr('MODEL_PATH', f'./models/TrackingEnv/{RecordingParameters.EXPERIMENT_NAME}{RecordingParameters.TIME}')
+GIFS_PATH = def_attr('GIFS_PATH', osp.join(MODEL_PATH, 'gifs'))
+EVAL_INTERVAL = int(def_attr('EVAL_INTERVAL', 20000))
+SAVE_INTERVAL = int(def_attr('SAVE_INTERVAL', 5e5))
+BEST_INTERVAL = int(def_attr('BEST_INTERVAL', 0))
+GIF_INTERVAL = int(def_attr('GIF_INTERVAL', 1e5))
+EVAL_EPISODES = int(def_attr('EVAL_EPISODES', 5))
+
 all_args = {
     'seed': SetupParameters.SEED,
     'n_envs': TrainingParameters.N_ENVS,
@@ -43,491 +61,264 @@ all_args = {
     'il_decay_steps': IL_DECAY_STEPS
 }
 
+
 def get_cosine_annealing_il_prob(current_step):
-    """Calculate IL probability using cosine annealing schedule"""
     if current_step >= IL_DECAY_STEPS:
         return IL_FINAL_PROB
-    
-    # Cosine annealing formula
     cosine_decay = 0.5 * (1 + math.cos(math.pi * current_step / IL_DECAY_STEPS))
     return IL_FINAL_PROB + (IL_INITIAL_PROB - IL_FINAL_PROB) * cosine_decay
 
-def main():
-    """main code"""
-    # preparing for training
-    if RecordingParameters.RETRAIN:
-        restore_path = './local_model'
-        model_path = restore_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
-        model_dict = torch.load(model_path)
 
-    if RecordingParameters.WANDB:
-        if RecordingParameters.RETRAIN:
-            wandb_id = None
-        else:
-            wandb_id = wandb.util.generate_id()
+def main():
+    # preparing for training
+    model_dict = None
+    wandb_id = None
+
+    if def_attr('RETRAIN', False):
+        restore_path = def_attr('RESTORE_DIR', None)
+        if restore_path:
+            model_path = restore_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
+            if os.path.exists(model_path):
+                model_dict = torch.load(model_path, map_location='cpu')
+
+    if def_attr('WANDB', False) and wandb is not None:
+        wandb_id = model_dict.get('wandb_id', None) if model_dict else None
         wandb.init(project=RecordingParameters.EXPERIMENT_PROJECT,
                    name=RecordingParameters.EXPERIMENT_NAME,
-                   entity=RecordingParameters.ENTITY,
-                   notes=RecordingParameters.EXPERIMENT_NOTE,
+                   entity=getattr(RecordingParameters, 'ENTITY', None),
+                   notes=getattr(RecordingParameters, 'EXPERIMENT_NOTE', ''),
                    config=all_args,
                    id=wandb_id,
                    resume='allow')
-        print('id is:{}'.format(wandb_id))
         print('Launching wandb...\n')
 
-    if RecordingParameters.TENSORBOARD:
-        if RecordingParameters.RETRAIN:
-            summary_path = ''
-        else:
-            summary_path = RecordingParameters.SUMMARY_PATH
-        if not os.path.exists(summary_path):
-            os.makedirs(summary_path)
-        global_summary = SummaryWriter(summary_path)
+    global_summary = None
+    if def_attr('TENSORBOARD', True):
+        os.makedirs(SUMMARY_PATH, exist_ok=True)
+        global_summary = SummaryWriter(SUMMARY_PATH)
         print('Launching tensorboard...\n')
 
-        if RecordingParameters.TXT_WRITER:
-            txt_path = summary_path + '/' + RecordingParameters.TXT_NAME
-            with open(txt_path, "w") as f:
-                f.write(str(all_args))
-            print('Logging txt...\n')
-
-    setproctitle.setproctitle(
-        RecordingParameters.EXPERIMENT_PROJECT + RecordingParameters.EXPERIMENT_NAME + "@" + RecordingParameters.ENTITY)
+    if setproctitle is not None:
+        setproctitle.setproctitle(
+            RecordingParameters.EXPERIMENT_PROJECT + RecordingParameters.EXPERIMENT_NAME + "@" + getattr(RecordingParameters, 'ENTITY', 'user'))
     set_global_seeds(SetupParameters.SEED)
 
-    # Create models based on training configuration
+    # Devices and models
     global_device = torch.device('cuda') if SetupParameters.USE_GPU_GLOBAL else torch.device('cpu')
-    local_device = torch.device('cuda') if SetupParameters.USE_GPU_LOCAL else torch.device('cpu')
-    
-    # Initialize training model
     training_model = Model(global_device, True)
-    
-    # Load model if retraining
-    if RecordingParameters.RETRAIN:
+
+    if model_dict is not None:
         training_model.network.load_state_dict(model_dict['model'])
         training_model.net_optimizer.load_state_dict(model_dict['optimizer'])
-    
-    # Initialize opponent model if using policy opponent
+
     opponent_model = None
+    opponent_weights = None
     if TrainingParameters.OPPONENT_TYPE == "policy":
-        opponent_model = Model(global_device, False)  # No optimizer needed for opponent
-        
-        # Load pretrained opponent model
+        opponent_model = Model(global_device, False)
         if TrainingParameters.AGENT_TO_TRAIN == "tracker":
-            opponent_dict = torch.load(SetupParameters.PRETRAINED_TARGET_PATH)
+            opp_path = SetupParameters.PRETRAINED_TARGET_PATH
         else:
-            opponent_dict = torch.load(SetupParameters.PRETRAINED_TRACKER_PATH)
-            
-        opponent_model.network.load_state_dict(opponent_dict['model'])
+            opp_path = SetupParameters.PRETRAINED_TRACKER_PATH
+        if opp_path and os.path.exists(opp_path):
+            opponent_dict = torch.load(opp_path, map_location='cpu')
+            opponent_model.network.load_state_dict(opponent_dict['model'])
+            opponent_weights = opponent_model.get_weights()
 
-    # Determine environment mission based on configuration
-    if TrainingParameters.AGENT_TO_TRAIN == "tracker":
-        if TrainingParameters.OPPONENT_TYPE == "rule":
-            env_mission = 0  # train tracker (target uses rules)
-        else:
-            env_mission = 2  # train tracker (target uses policy)
-    else:  # training target
-        if TrainingParameters.OPPONENT_TYPE == "rule":
-            env_mission = 1  # train target (tracker uses rules)
-        else:
-            env_mission = 3  # train target (tracker uses policy)
+    # Mission mapping: 0->train tracker, 1->train target (reward flipped in env)
+    env_mission = 0 if TrainingParameters.AGENT_TO_TRAIN == "tracker" else 1
 
-    # Create parallel environments and evaluation environment
+    # Envs
     envs = [Runner.remote(i + 1, env_mission) for i in range(TrainingParameters.N_ENVS)]
     eval_env = TrackingEnv(mission=env_mission)
-    
-    # Setup training state
-    if RecordingParameters.RETRAIN:
-        curr_steps = model_dict["step"]
-        curr_episodes = model_dict["episode"]
-        best_perf = model_dict["reward"]
-    else:
-        curr_steps = curr_episodes = best_perf = 0
 
-    update_done = True
-    demon = True
-    job_list = []
-    last_test_t = -RecordingParameters.EVAL_INTERVAL - 1
-    last_model_t = -RecordingParameters.SAVE_INTERVAL - 1
-    last_best_t = -RecordingParameters.BEST_INTERVAL - 1
-    last_gif_t = -RecordingParameters.GIF_INTERVAL - 1
+    # State
+    curr_steps = int(model_dict.get("step", 0)) if model_dict is not None else 0
+    curr_episodes = int(model_dict.get("episode", 0)) if model_dict is not None else 0
+    best_perf = float(model_dict.get("reward", -1e9)) if model_dict is not None else -1e9
 
-    # start training
+    last_test_t = -int(EVAL_INTERVAL) - 1
+    last_model_t = -int(SAVE_INTERVAL) - 1
+    last_best_t = -int(BEST_INTERVAL) - 1
+    last_gif_t = -int(GIF_INTERVAL) - 1
+
+    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(GIFS_PATH, exist_ok=True)
+
     try:
         while curr_steps < TrainingParameters.N_MAX_STEPS:
-            if update_done:
-                # start a data collection - send model weights
-                if global_device != local_device:
-                    model_weights = training_model.network.to(local_device).state_dict()
-                    training_model.network.to(global_device)
-                    
-                    if TrainingParameters.OPPONENT_TYPE == "policy" and opponent_model:
-                        opponent_weights = opponent_model.network.to(local_device).state_dict()
-                        opponent_model.network.to(global_device)
-                    else:
-                        opponent_weights = None
-                else:
-                    model_weights = training_model.network.state_dict()
-                    opponent_weights = opponent_model.network.state_dict() if opponent_model else None
-                
-                # Put weights in ray object store
-                model_weights_id = ray.put(model_weights)
-                opponent_weights_id = ray.put(opponent_weights) if opponent_weights else None
-                curr_steps_id = ray.put(curr_steps)
-                
-                # Calculate current IL probability using cosine annealing
-                current_il_prob = get_cosine_annealing_il_prob(curr_steps)
-                
-                # Log current IL probability
-                if RecordingParameters.WANDB:
-                    wandb.log({'IL_probability': current_il_prob}, step=curr_steps)
-                if RecordingParameters.TENSORBOARD:
-                    global_summary.add_scalar('Training/IL_probability', current_il_prob, curr_steps)
-                
-                # Decide whether to do imitation learning using current probability
-                demon_probs = np.random.rand()
-                if demon_probs < current_il_prob:
-                    demon = True
-                    for i, env in enumerate(envs):
-                        job_list.append(env.imitation.remote(model_weights_id, opponent_weights_id, curr_steps_id))
-                else:
-                    demon = False
-                    for i, env in enumerate(envs):
-                        job_list.append(env.run.remote(model_weights_id, opponent_weights_id, curr_steps_id))
+            # Decide IL vs RL
+            il_prob = get_cosine_annealing_il_prob(curr_steps)
+            do_il = (np.random.rand() < il_prob)
 
-            # get data from multiple processes
-            done_id, job_list = ray.wait(job_list, num_returns=TrainingParameters.N_ENVS)
-            update_done = True if job_list == [] else False
-            done_len = len(done_id)
-            job_results = ray.get(done_id)
-            
-            if demon:
-                # Process imitation learning data
-                mb_vector, mb_actions, mb_hidden = [], [], []
-                total_episodes = 0
-                total_steps = 0
-                
-                for result in job_results:
-                    if len(result) >= 4:  # Check for valid results
-                        mb_vector.append(result[0])
-                        mb_actions.append(result[1])
-                        mb_hidden.append(result[2])
-                        total_episodes += result[3]
-                        total_steps += len(result[0]) if len(result[0]) > 0 else 0
+            weights = training_model.get_weights()
+            jobs = []
+            if do_il:
+                for e in envs:
+                    jobs.append(e.imitation.remote(weights, opponent_weights, curr_steps))
+                il_batches = ray.get(jobs)
 
-                curr_episodes += total_episodes
-                curr_steps += total_steps
+                vec = np.concatenate([b['vector'] for b in il_batches], axis=0)
+                lbl = np.concatenate([b['actions'] for b in il_batches], axis=0)
+                idx = np.random.permutation(len(vec))
+                vec = vec[idx]
+                lbl = lbl[idx]
 
-                # Train the model using imitation learning
-                if mb_vector and any(len(v) > 0 for v in mb_vector):
-                    valid_vectors = [v for v in mb_vector if len(v) > 0]
-                    valid_actions = [a for a in mb_actions if len(a) > 0]
-                    valid_hidden = [h for h in mb_hidden if len(h) > 0]
-                    
-                    if valid_vectors:
-                        mb_vector_concat = np.concatenate(valid_vectors, axis=0)
-                        mb_actions_concat = np.concatenate(valid_actions, axis=0)
-                        mb_hidden_concat = np.concatenate(valid_hidden, axis=0)
+                mb_loss = []
+                for start in range(0, len(vec), TrainingParameters.MINIBATCH_SIZE):
+                    end = min(start + TrainingParameters.MINIBATCH_SIZE, len(vec))
+                    mb_loss.append(training_model.imitation_train(vec[start:end], lbl[start:end]))
 
-                        mb_loss = []
-                        for start in range(0, mb_vector_concat.shape[0], TrainingParameters.MINIBATCH_SIZE):
-                            end = min(start + TrainingParameters.MINIBATCH_SIZE, mb_vector_concat.shape[0])
-                            slices = (mb_vector_concat[start:end], mb_actions_concat[start:end], mb_hidden_concat[start:end])
-                            mb_loss.append(training_model.imitation_train(*slices))
+                write_to_tensorboard(global_summary, curr_steps, imitation_loss=np.nanmean(mb_loss, axis=0), evaluate=False)
+                if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
+                    write_to_wandb(curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
 
-                        if mb_loss:
-                            mb_loss = np.nanmean(mb_loss, axis=0)
-                            agent_name = TrainingParameters.AGENT_TO_TRAIN.capitalize()
-                            
-                            # Log training metrics
-                            if RecordingParameters.WANDB:
-                                wandb.log({f'{agent_name}_Loss/Imitation_loss': mb_loss[0]}, step=curr_steps)
-                                wandb.log({f'{agent_name}_Grad/Imitation_grad': mb_loss[1]}, step=curr_steps)
-                            if RecordingParameters.TENSORBOARD:
-                                global_summary.add_scalar(f'{agent_name}_Loss/Imitation_loss', mb_loss[0], curr_steps)
-                                global_summary.add_scalar(f'{agent_name}_Grad/Imitation_grad', mb_loss[1], curr_steps)
-
+                curr_steps += int(TrainingParameters.N_ENVS * TrainingParameters.N_STEPS)
             else:
-                # Process reinforcement learning data
-                curr_steps += done_len * TrainingParameters.N_STEPS
-                
-                # Gather RL data
-                training_data = {'vector': [], 'returns': [], 'values': [], 'actions': [], 'ps': [], 'hidden': []}
-                performance_dict = {'per_r': [], 'per_in_r': [], 'per_ex_r': [], 'per_valid_rate': [],
+                # RL rollout
+                jobs = [e.run.remote(weights, opponent_weights, curr_steps) for e in envs]
+                results = ray.get(jobs)
+
+                vectors = np.concatenate([r[0]['vector'] for r in results], axis=0)
+                returns = np.concatenate([r[0]['returns'] for r in results], axis=0)
+                values = np.concatenate([r[0]['values'] for r in results], axis=0)
+                actions = np.concatenate([r[0]['actions'] for r in results], axis=0)
+                probs = np.concatenate([r[0]['ps'] for r in results], axis=0)
+                steps_batch = int(sum(r[1] for r in results))
+                episodes_batch = int(sum(r[2] for r in results))
+
+                # Aggregate performance
+                performance_dict = {'per_r': [], 'per_ex_r': [], 'per_in_r': [], 'per_valid_rate': [],
                                     'per_episode_len': [], 'rewarded_rate': []}
-                
-                for result in job_results:
-                    if len(result) >= 8:  # Check for valid results
-                        # Training data
-                        training_data['vector'].append(result[0])
-                        training_data['returns'].append(result[1])
-                        training_data['values'].append(result[2])
-                        training_data['actions'].append(result[3])
-                        training_data['ps'].append(result[4])
-                        training_data['hidden'].append(result[5])
-                        
-                        curr_episodes += result[6]
-                        
-                        # Performance data
-                        perf_data = result[7]
-                        for key in performance_dict.keys():
-                            if key in perf_data and perf_data[key]:
-                                if isinstance(perf_data[key], list):
-                                    performance_dict[key].extend(perf_data[key])
-                                else:
-                                    performance_dict[key].append(perf_data[key])
+                for r in results:
+                    perf = r[3]
+                    for k, v in perf.items():
+                        performance_dict[k].extend(v)
 
-                # Calculate average performance
-                for key in performance_dict.keys():
-                    if performance_dict[key]:
-                        performance_dict[key] = np.nanmean(performance_dict[key])
-                    else:
-                        performance_dict[key] = 0.0
+                # Train PPO
+                mb_loss = []
+                inds = np.arange(len(vectors))
+                for epoch in range(TrainingParameters.N_EPOCHS):
+                    np.random.shuffle(inds)
+                    for start in range(0, len(vectors), TrainingParameters.MINIBATCH_SIZE):
+                        end = min(start + TrainingParameters.MINIBATCH_SIZE, len(vectors))
+                        mb = inds[start:end]
+                        mb_loss.append(training_model.train(
+                            vectors[mb], returns[mb], values[mb], actions[mb], probs[mb], None
+                        ))
 
-                # Train model with RL data
-                if training_data['vector']:
-                    for key in training_data:
-                        training_data[key] = np.concatenate(training_data[key], axis=0)
-                    
-                    mb_loss = []
-                    inds = np.arange(len(training_data['vector']))
-                    for _ in range(TrainingParameters.N_EPOCHS):
-                        np.random.shuffle(inds)
-                        for start in range(0, len(training_data['vector']), TrainingParameters.MINIBATCH_SIZE):
-                            end = min(start + TrainingParameters.MINIBATCH_SIZE, len(training_data['vector']))
-                            mb_inds = inds[start:end]
-                            mb_loss.append(training_model.train(
-                                training_data['vector'][mb_inds], 
-                                training_data['returns'][mb_inds], 
-                                training_data['values'][mb_inds], 
-                                training_data['actions'][mb_inds],
-                                training_data['ps'][mb_inds], 
-                                training_data['hidden'][mb_inds]
-                            ))
+                avg_perf = {k: (float(np.nanmean(v)) if len(v) > 0 else 0.0) for k, v in performance_dict.items()}
+                write_to_tensorboard(global_summary, curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
+                if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
+                    write_to_wandb(curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
 
-                    # Record training results
-                    agent_name = TrainingParameters.AGENT_TO_TRAIN.capitalize()
-                    if RecordingParameters.WANDB:
-                        # Log performance metrics
-                        for key, value in performance_dict.items():
-                            wandb.log({f'{agent_name}_{key}': value}, step=curr_steps)
-                        
-                        # Log training loss metrics
-                        if mb_loss:
-                            loss_vals = np.nanmean(mb_loss, axis=0)
-                            for i, name in enumerate(RecordingParameters.LOSS_NAME):
-                                wandb.log({f'{agent_name}_{name}': loss_vals[i]}, step=curr_steps)
-                                
-                    if RecordingParameters.TENSORBOARD:
-                        # Log performance and loss metrics to tensorboard
-                        for key, value in performance_dict.items():
-                            global_summary.add_scalar(f'{agent_name}_{key}', value, curr_steps)
-                        
-                        if mb_loss:
-                            loss_vals = np.nanmean(mb_loss, axis=0)
-                            for i, name in enumerate(RecordingParameters.LOSS_NAME):
-                                if name == 'grad_norm':
-                                    global_summary.add_scalar(f'{agent_name}_Grad/{name}', loss_vals[i], curr_steps)
-                                else:
-                                    global_summary.add_scalar(f'{agent_name}_Loss/{name}', loss_vals[i], curr_steps)
+                curr_steps += steps_batch
+                curr_episodes += episodes_batch
 
-            # Evaluation
-            if (curr_steps - last_test_t) / RecordingParameters.EVAL_INTERVAL >= 1.0:
-                if (curr_steps - last_gif_t) / RecordingParameters.GIF_INTERVAL >= 1.0:
-                    save_gif = True
-                    last_gif_t = curr_steps
-                else:
-                    save_gif = False
+                # Save latest
+                if curr_steps - last_model_t >= SAVE_INTERVAL:
+                    last_model_t = curr_steps
+                    model_path = osp.join(MODEL_PATH, 'latest')
+                    os.makedirs(model_path, exist_ok=True)
+                    save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
+                    checkpoint = {"model": training_model.network.state_dict(),
+                                  "optimizer": training_model.net_optimizer.state_dict(),
+                                  "step": curr_steps, "episode": curr_episodes, "reward": avg_perf['per_r']}
+                    torch.save(checkpoint, save_path)
+                    print(f"Saved latest model at step {curr_steps}")
 
+                # Save best
+                mean_r = avg_perf['per_r']
+                if mean_r > best_perf and (curr_steps - last_best_t >= BEST_INTERVAL):
+                    best_perf = mean_r
+                    last_best_t = curr_steps
+                    model_path = osp.join(MODEL_PATH, 'best_model')
+                    os.makedirs(model_path, exist_ok=True)
+                    save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
+                    checkpoint = {"model": training_model.network.state_dict(),
+                                  "optimizer": training_model.net_optimizer.state_dict(),
+                                  "step": curr_steps, "episode": curr_episodes, "reward": best_perf}
+                    torch.save(checkpoint, save_path)
+                    print(f"New best model saved with reward {best_perf:.4f}")
+
+            # Evaluate
+            if curr_steps - last_test_t >= EVAL_INTERVAL:
                 last_test_t = curr_steps
-                with torch.no_grad():
-                    # Evaluate the model
-                    eval_performance_dict = evaluate_single_agent(
-                        eval_env, 
-                        training_model, 
-                        opponent_model,
-                        global_device, 
-                        save_gif, 
-                        curr_steps
-                    )
-                
-                agent_name = TrainingParameters.AGENT_TO_TRAIN.capitalize()
-                if RecordingParameters.WANDB:
-                    for key, value in eval_performance_dict.items():
-                        wandb.log({f'{agent_name}_Eval_{key}': value}, step=curr_steps)
-                        
-                if RecordingParameters.TENSORBOARD:
-                    for key, value in eval_performance_dict.items():
-                        global_summary.add_scalar(f'{agent_name}_Eval_{key}', value, curr_steps)
-
-                print('episodes: {}, step: {}, episode reward: {:.2f}\n'.format(
-                    curr_episodes, curr_steps, eval_performance_dict.get('per_r', 0)))
-                    
-                # save model with the best performance
-                if RecordingParameters.RECORD_BEST:
-                    current_perf = eval_performance_dict.get('per_r', 0)
-                    if current_perf > best_perf and (
-                            curr_steps - last_best_t) / RecordingParameters.BEST_INTERVAL >= 1.0:
-                        best_perf = current_perf
-                        last_best_t = curr_steps
-                        print('Saving best model \n')
-                        model_path = osp.join(RecordingParameters.MODEL_PATH, 'best_model')
-                        if not os.path.exists(model_path):
-                            os.makedirs(model_path)
-                        
-                        # Save the trained model
-                        save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
-                        
-                        checkpoint = {"model": training_model.network.state_dict(),
-                                     "optimizer": training_model.net_optimizer.state_dict(),
-                                     "step": curr_steps, "episode": curr_episodes, "reward": best_perf}
-                        
-                        torch.save(checkpoint, save_path)
-
-            # save model periodically
-            if (curr_steps - last_model_t) / RecordingParameters.SAVE_INTERVAL >= 1.0:
-                last_model_t = curr_steps
-                print('Saving Model !\n')
-                model_path = osp.join(RecordingParameters.MODEL_PATH, '%.5i' % curr_steps)
-                if not os.path.exists(model_path):
-                    os.makedirs(model_path)
-                
-                # Save the trained model
-                save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
-                
-                checkpoint = {"model": training_model.network.state_dict(),
-                             "optimizer": training_model.net_optimizer.state_dict(),
-                             "step": curr_steps, "episode": curr_episodes, "reward": 0}
-                
-                torch.save(checkpoint, save_path)
+                eval_perf = evaluate_single_agent(eval_env, training_model, opponent_model, global_device,
+                                                  save_gif=(curr_steps - last_gif_t >= GIF_INTERVAL),
+                                                  curr_steps=curr_steps)
+                write_to_tensorboard(global_summary, curr_steps, performance_dict=eval_perf, evaluate=True)
+                if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
+                    write_to_wandb(curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
+                if curr_steps - last_gif_t >= GIF_INTERVAL:
+                    last_gif_t = curr_steps
 
     except KeyboardInterrupt:
         print("CTRL-C pressed. killing remote workers")
     finally:
         # save final model
         print('Saving Final Model !\n')
-        model_path = RecordingParameters.MODEL_PATH + '/final'
+        model_path = MODEL_PATH + '/final'
         if not os.path.exists(model_path):
-            os.makedirs(model_path)
-        
-        # Save the trained model
+            os.makedirs(model_path, exist_ok=True)
         save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
-        
         checkpoint = {"model": training_model.network.state_dict(),
-                     "optimizer": training_model.net_optimizer.state_dict(),
-                     "step": curr_steps, "episode": curr_episodes, "reward": 0}
-        
+                      "optimizer": training_model.net_optimizer.state_dict(),
+                      "step": curr_steps, "episode": curr_episodes, "reward": best_perf}
         torch.save(checkpoint, save_path)
-        
-        if RecordingParameters.TENSORBOARD:
-            global_summary.close()
-        # killing
-        for e in envs:
-            ray.kill(e)
-        if RecordingParameters.WANDB:
-            wandb.finish()
+        print(f"Saved final model to {save_path}")
 
 
 def evaluate_single_agent(eval_env, agent_model, opponent_model, device, save_gif, curr_steps):
-    """Single-agent evaluation function"""
-    eval_performance_dict = {'per_r': [], 'per_ex_r': [], 'per_in_r': [], 'per_valid_rate': [], 
+    eval_performance_dict = {'per_r': [], 'per_ex_r': [], 'per_in_r': [], 'per_valid_rate': [],
                              'per_episode_len': [], 'rewarded_rate': []}
     episode_frames = []
 
-    for i in range(RecordingParameters.EVAL_EPISODES):
-        # reset environment
-        agent_hidden = None
-        opponent_hidden = None
-        
+    for _ in range(EVAL_EPISODES):
         obs, _ = eval_env.reset()
         done = False
-        episode_step = 0
-        episode_reward = 0
-        
-        if save_gif:
-            try:
-                frame = eval_env.render(mode='rgb_array')
-                if frame is not None:
-                    episode_frames.append(frame)
-            except Exception as e:
-                print(f"Error capturing frame: {e}")
-
-        # stepping
-        while not done and episode_step < EnvParameters.EPISODE_LEN:
-            # Get action from our agent
+        ep_r = 0.0
+        ep_len = 0
+        reward_cnt = 0
+        while not done and ep_len < EnvParameters.EPISODE_LEN:
+            agent_action, _, _, _ = agent_model.evaluate(obs, greedy=True)
             if TrainingParameters.AGENT_TO_TRAIN == "tracker":
-                agent_action, agent_hidden, _, _ = agent_model.evaluate(obs, agent_hidden, greedy=True)
-                
-                # Get opponent (target) action
                 if opponent_model is not None:
-                    # Using policy opponent
-                    opponent_action, opponent_hidden, _, _ = opponent_model.evaluate(obs, opponent_hidden, greedy=True)
-                    tracker_action, target_action = agent_action, opponent_action
+                    opp_action, _, _, _ = opponent_model.evaluate(obs, greedy=True)
+                    tracker_action, target_action = agent_action, opp_action
                 else:
-                    # Using rule-based opponent - let environment handle it
-                    tracker_action, target_action = agent_action, None
+                    tracker_action, target_action = agent_action, -1
             else:
-                # Training target agent
-                agent_action, agent_hidden, _, _ = agent_model.evaluate(obs, agent_hidden, greedy=True)
-                
-                # Get opponent (tracker) action
                 if opponent_model is not None:
-                    # Using policy opponent
-                    opponent_action, opponent_hidden, _, _ = opponent_model.evaluate(obs, opponent_hidden, greedy=True)
-                    tracker_action, target_action = opponent_action, agent_action
+                    opp_action, _, _, _ = opponent_model.evaluate(obs, greedy=True)
+                    tracker_action, target_action = opp_action, agent_action
                 else:
-                    # Using rule-based opponent - let environment handle it
-                    tracker_action, target_action = None, agent_action
-            
-            # Move
-            try:
-                obs, reward, terminated, truncated, info = eval_env.step(tracker_action, target_action)
-                done = terminated or truncated
-            except Exception as e:
-                print(f"Error in step: {e}")
-                # Fallback
-                obs, reward, done = obs, 0, True
-            
-            episode_step += 1
-            episode_reward += reward
-            
-            if save_gif:
-                try:
-                    frame = eval_env.render(mode='rgb_array')
-                    if frame is not None:
-                        episode_frames.append(frame)
-                except Exception as e:
-                    print(f"Error capturing frame: {e}")
+                    tracker_action, target_action = -1, agent_action
 
-        # save gif
-        if save_gif and episode_frames:
-            try:
-                if not os.path.exists(RecordingParameters.GIFS_PATH):
-                    os.makedirs(RecordingParameters.GIFS_PATH)
-                images = np.array(episode_frames)
-                agent_name = TrainingParameters.AGENT_TO_TRAIN
-                opponent_type = TrainingParameters.OPPONENT_TYPE
-                gif_path = '{}/{}_{}_steps_{:d}_reward{:.1f}.gif'.format(
-                    RecordingParameters.GIFS_PATH, agent_name, opponent_type, curr_steps, episode_reward)
-                make_gif(images, gif_path)
-                save_gif = False
-            except Exception as e:
-                print(f"Failed to save gif: {e}")
+            obs, reward, terminated, truncated, info = eval_env.step((tracker_action, target_action))
+            done = terminated or truncated
+            ep_r += float(reward)
+            reward_cnt += 1 if reward > 0 else 0
+            ep_len += 1
 
-        # Update performance statistics
-        eval_performance_dict['per_r'].append(episode_reward)
-        eval_performance_dict['per_ex_r'].append(reward if 'reward' in locals() else 0)
-        eval_performance_dict['per_in_r'].append(0)  
+            frame = eval_env.render(mode='rgb_array')
+            if frame is not None:
+                episode_frames.append(frame)
+
+        eval_performance_dict['per_r'].append(ep_r)
+        eval_performance_dict['per_ex_r'].append(0.0)
+        eval_performance_dict['per_in_r'].append(0.0)
         eval_performance_dict['per_valid_rate'].append(1.0)
-        eval_performance_dict['per_episode_len'].append(episode_step)
-        eval_performance_dict['rewarded_rate'].append(0)
+        eval_performance_dict['per_episode_len'].append(ep_len)
+        eval_performance_dict['rewarded_rate'].append(reward_cnt / max(1, ep_len * 2))
 
-    # average performance
     for key in eval_performance_dict.keys():
-        if eval_performance_dict[key]:
-            eval_performance_dict[key] = np.nanmean(eval_performance_dict[key])
-        else:
-            eval_performance_dict[key] = 0.0
+        vals = eval_performance_dict[key]
+        eval_performance_dict[key] = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
+
+    if save_gif and len(episode_frames) > 0:
+        gif_path = osp.join(GIFS_PATH, f"eval_{int(curr_steps)}.gif")
+        os.makedirs(GIFS_PATH, exist_ok=True)
+        make_gif(episode_frames, gif_path, fps=20)
 
     return eval_performance_dict
 

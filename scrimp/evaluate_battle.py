@@ -7,6 +7,7 @@ import pandas as pd
 import time
 from multiprocessing import Pool, cpu_count
 import datetime  # 修改这里
+import task_config
 
 from env import TrackingEnv
 from model import Model
@@ -57,67 +58,62 @@ class BattleConfig:
             self.mission = 2   # 都是policy
 
 def get_expert_target_action(observation):
-    """Expert action for target agent with improved lateral evasion strategy"""
-    # Extract observation components
-    tracker_to_target_x = observation[4]
-    tracker_to_target_y = observation[5]
-    target_to_base_x = observation[8]
-    target_to_base_y = observation[9]
-    current_angle = observation[11] * 360  # target_angle in degrees
-    
-    # Calculate distances
-    distance_to_tracker = np.sqrt(tracker_to_target_x**2 + tracker_to_target_y**2)
-    distance_to_base = np.sqrt(target_to_base_x**2 + target_to_base_y**2)
-    
-    # Calculate base and escape directions
-    base_angle = np.arctan2(target_to_base_y, target_to_base_x)
-    escape_angle = np.arctan2(-tracker_to_target_y, -tracker_to_target_x)
-    
-    # Calculate lateral escape vectors (perpendicular to tracker direction)
-    lateral_angle_right = escape_angle + np.pi/2  # 90 degrees clockwise
-    lateral_angle_left = escape_angle - np.pi/2   # 90 degrees counterclockwise
-    
-    # Choose the lateral direction that's closer to the base
-    base_right_diff = np.abs(np.cos(lateral_angle_right - base_angle))
-    base_left_diff = np.abs(np.cos(lateral_angle_left - base_angle))
-    lateral_angle = lateral_angle_right if base_right_diff > base_left_diff else lateral_angle_left
-    
-    # Dynamic weighting based on tracker distance and position
-    danger_threshold = 30 # Distance threshold for evasive action
-    if distance_to_tracker < danger_threshold:
-        # Tracker is close - prioritize evasion
-        base_weight = 0.2
-        escape_weight = 0.0
-        lateral_weight = 0.8  # Strong lateral movement when being pursued
+    # 归一化分量
+    t2t_x_n, t2t_y_n = observation[4], observation[5]
+    t2b_x_n, t2b_y_n = observation[8], observation[9]
+    current_angle = observation[11] * 360
+
+    # 转为像素坐标系下的向量与距离
+    dx_t = t2t_x_n * task_config.width
+    dy_t = t2t_y_n * task_config.height
+    dx_b = t2b_x_n * task_config.width
+    dy_b = t2b_y_n * task_config.height
+
+    distance_to_tracker = np.hypot(dx_t, dy_t)
+    distance_to_base = np.hypot(dx_b, dy_b)
+
+    base_angle = np.arctan2(dy_b, dx_b)
+    # 从 target 指向 tracker 的向量（用于逃逸/横向）
+    tgt_to_trk = np.array([-dx_t, -dy_t], dtype=np.float32)
+    escape_angle = np.arctan2(tgt_to_trk[1], tgt_to_trk[0])  # 远离 tracker
+
+    # 判定 tracker 是否“在路上”：投影到 target->base 线段
+    v = np.array([dx_b, dy_b], dtype=np.float32)
+    u = np.array([ -dx_t, -dy_t], dtype=np.float32)  # target->tracker
+    v2 = np.dot(v, v) + 1e-6
+    t = float(np.dot(u, v) / v2)  # 0~1 表示在 target->base 线段之间
+    # 与线路的垂距
+    perp_dist = np.linalg.norm(u - t * v)
+
+    # 像素阈值（按你的地图改）
+    NEAR = 60.0
+    MID = 180.0
+    CORRIDOR = 40.0  # 认为“在路上”的通道宽度
+
+    if t < 0 or t > 1 or perp_dist > CORRIDOR:
+        # tracker 不在 target->base 路径上：直冲基地
+        desired_angle = base_angle
     else:
-        # Safe distance - balance between base and lateral movement
-        base_weight = 0.03
-        escape_weight = 0.0
-        lateral_weight = 0.97  # Strong lateral movement when being pursued
-    
-    # Combine directions with dynamic weights
-    mixed_angle = (base_angle * base_weight) + (escape_angle * escape_weight) + (lateral_angle * lateral_weight)
-    
-    # Convert to degrees and normalize to 0-360
-    desired_angle = (np.degrees(mixed_angle) + 360) % 360
-    
-    # Calculate relative turning angle needed
-    relative_angle = ((desired_angle - current_angle + 180) % 360) - 180
-    
-    # Map to closest available relative angle in action space (-45 to 45)
-    relative_angle = np.clip(relative_angle, -45, 45)
-    
-    # Map to direction index (0-15) for the action space
-    direction_index = int((relative_angle + 45) / 90 * 16)
-    direction_index = np.clip(direction_index, 0, 15)
-    
-    # Always use highest speed
-    speed_level = 2  # always use fastest speed
-    
-    # Combine direction and speed for final action
-    expert_action = direction_index * 3 + speed_level
-    
-    return expert_action
+        # tracker 在路径上
+        if distance_to_tracker < NEAR:
+            desired_angle = escape_angle
+        elif distance_to_tracker < MID:
+            # 横向机动（与逃逸方向垂直），选择更接近基地一侧
+            lateral = escape_angle + np.pi/2
+            right_score = abs(np.cos(lateral - base_angle))
+            left_score  = abs(np.cos((lateral + np.pi) - base_angle))
+            desired_angle = lateral if right_score <= left_score else (lateral + np.pi)
+        else:
+            desired_angle = base_angle
+
+    desired_angle_deg = (np.degrees(desired_angle) + 360) % 360
+    relative_angle = ((desired_angle_deg - current_angle + 180) % 360) - 180
+    relative_angle = float(np.clip(relative_angle, -45, 45))
+
+    # 将相对角映射到 0..15
+    direction_index = int(np.clip(round((relative_angle + 45) / 90 * 15), 0, 15))
+    speed_level = 2  # 全速
+    return direction_index * 3 + speed_level
 
 def run_battle_episode(config, episode_idx):
     """运行单个对战回合"""
@@ -281,7 +277,7 @@ def run_battle(config):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # 修改这里
     results_path = f"{config.output_dir}/battle_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
     df.to_csv(results_path, index=False)
-    
+     
     # 保存统计结果
     stats_path = f"{config.output_dir}/stats_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
     pd.DataFrame([stats]).to_csv(stats_path, index=False)

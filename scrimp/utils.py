@@ -1,234 +1,226 @@
-import numpy as np
-import pygame
 import math
+import numpy as np
+
+try:
+    import pygame
+    import pygame.gfxdraw
+except Exception:
+    pygame = None  # 渲染降级
+
 import task_config
 
+
 def reward_calculate(tracker, target, base, mission=0):
-    """
-    Calculate zero-sum rewards with normalized distance penalties.
-    
-    Args:
-        tracker: Tracker agent position dictionary
-        target: Target agent position dictionary
-        base: Base position dictionary
-        mission: Mission type (0: train tracker, 1: train target, 2: train tracker with target policy)
-    """
-    reward = 0
+    reward = 0.0
     terminated = False
     truncated = False
     info = {}
 
-    # Calculate raw distances
-    current_target_distance = np.sqrt((tracker['x'] - target['x'])**2 + (tracker['y'] - target['y'])**2)
-    current_base_distance = np.sqrt((target['x'] - base['x'])**2 + (target['y'] - base['y'])**2)
+    dist_tt = float(np.hypot(tracker['x'] - target['x'], tracker['y'] - target['y']))
+    dist_tb = float(np.hypot(target['x'] - base['x'], target['y'] - base['y']))
 
-    # Normalize distances using map dimensions
-    max_distance = np.sqrt(task_config.width**2 + task_config.height**2)
-    norm_target = current_target_distance / max_distance  # 0-1 (far-near)
-    norm_base = current_base_distance / max_distance  # 0-1 (far-near)
+    capture_radius = getattr(task_config, 'capture_radius', task_config.pixel_size)
+    base_radius = getattr(task_config, 'base_radius', task_config.pixel_size)
 
-    # Termination conditions
-    if current_base_distance <= task_config.pixel_size:  # Target reaches base
-        reward = -50  # Tracker penalty
+    max_d = float(np.hypot(task_config.width, task_config.height))
+    norm_t = dist_tt / max_d
+    norm_b = dist_tb / max_d
+
+    if dist_tb <= base_radius:
+        reward = -getattr(task_config, 'success_reward', 1.0)
         terminated = True
-        info['reason'] = 'Attacker reached the base'
-    elif current_target_distance <= task_config.pixel_size:  # Tracker catches target
-        reward = 50  # Tracker reward
+        info['reason'] = 'target_reached_base'
+    elif dist_tt <= capture_radius:
+        reward = getattr(task_config, 'success_reward', 1.0)
         truncated = True
-        info['reason'] = 'Defender intercepted the attacker'
+        info['reason'] = 'tracker_caught_target'
     else:
-        # Distance-based components (normalized 0-1)
-        track_reward = 0.6 * (1 - norm_target)  # Closer to target -> higher reward
-        base_penalty = 1 * (1 - norm_base)    # Closer to base -> higher penalty
-        reward = track_reward - base_penalty
-    
+        reward = 0.8 * (1.0 - norm_t) - 1.0 * (1.0 - norm_b)
+        reward -= 0.01
+
     if mission == 1:
         reward = -reward
-        
-    reward -= 0.2
-    return reward, terminated, truncated, info
+
+    return float(reward), terminated, truncated, info
+
+
+def _to_hi_res(pt):
+    ss = getattr(task_config, 'ssaa', 1)
+    return int(round(pt[0] * ss)), int(round(pt[1] * ss))
+
+
+def _draw_grid(surface):
+    if pygame is None:
+        return
+    if not getattr(task_config, 'draw_grid', True):
+        return
+    ss = getattr(task_config, 'ssaa', 1)
+    step = int(task_config.grid_step * ss)
+    color = task_config.grid_color
+    w, h = surface.get_size()
+    for x in range(0, w, step):
+        pygame.draw.line(surface, color, (x, 0), (x, h), 1)
+    for y in range(0, h, step):
+        pygame.draw.line(surface, color, (0, y), (w, y), 1)
+
+
+def _draw_base(surface, base_center):
+    if pygame is None:
+        return
+    ss = getattr(task_config, 'ssaa', 1)
+    cx, cy = _to_hi_res(base_center)
+    r_out = int(task_config.base_radius_draw * ss)
+    r_in = max(1, int((task_config.base_radius_draw - 3) * ss))
+    if getattr(task_config, 'enable_aa', True):
+        pygame.gfxdraw.filled_circle(surface, cx, cy, r_out, task_config.base_color_outer)
+        pygame.gfxdraw.aacircle(surface, cx, cy, r_out, task_config.base_color_outer)
+        pygame.gfxdraw.filled_circle(surface, cx, cy, r_in, task_config.base_color_inner)
+        pygame.gfxdraw.aacircle(surface, cx, cy, r_in, task_config.base_color_inner)
+    else:
+        pygame.draw.circle(surface, task_config.base_color_outer, (cx, cy), r_out)
+        pygame.draw.circle(surface, task_config.base_color_inner, (cx, cy), r_in)
+
+
+def _triangle_points(center, angle_deg, base, height):
+    cx, cy = center
+    theta = math.radians(angle_deg)
+    tip = (cx + height * math.cos(theta), cy + height * math.sin(theta))
+    lt = theta + math.radians(150)
+    rt = theta - math.radians(150)
+    left = (cx + base * math.cos(lt), cy + base * math.sin(lt))
+    right = (cx + base * math.cos(rt), cy + base * math.sin(rt))
+    return [tip, left, right]
+
+
+def _draw_agent(surface, agent, color):
+    if pygame is None:
+        return
+    ss = getattr(task_config, 'ssaa', 1)
+    px = agent['x'] + task_config.pixel_size / 2.0
+    py = agent['y'] + task_config.pixel_size / 2.0
+    tri = _triangle_points((px * ss, py * ss), float(agent.get('theta', 0.0)),
+                           base=6 * ss, height=10 * ss)
+    if getattr(task_config, 'enable_aa', True):
+        pygame.gfxdraw.filled_trigon(surface, int(tri[0][0]), int(tri[0][1]),
+                                     int(tri[1][0]), int(tri[1][1]),
+                                     int(tri[2][0]), int(tri[2][1]),
+                                     color)
+        pygame.gfxdraw.aatrigon(surface, int(tri[0][0]), int(tri[0][1]),
+                                int(tri[1][0]), int(tri[1][1]),
+                                int(tri[2][0]), int(tri[2][1]),
+                                color)
+    else:
+        cx, cy = _to_hi_res((px, py))
+        pygame.draw.circle(surface, color, (cx, cy), int(task_config.agent_radius * ss))
+
+
+def _draw_trail(surface, traj, rgba, width_px):
+    if pygame is None:
+        return
+    if len(traj) < 2:
+        return
+    ss = getattr(task_config, 'ssaa', 1)
+    pts = [_to_hi_res(p) for p in traj[-getattr(task_config, 'trail_max_len', 600):]]
+    pygame.draw.lines(surface, rgba, False, pts, max(int(width_px * ss), 1))
+
 
 def get_canvas(target, tracker, base, tracker_trajectory, target_trajectory):
-    # 加载并调整智能体和目标的图像尺寸
-    tracker_img = task_config.tracker_img
-    target_img = task_config.target_img
-    base_img = task_config.base_img
-    tracker_img = pygame.transform.scale(tracker_img, (20, 20))
-    target_img = pygame.transform.scale(target_img, (20, 20))
-    base_img = pygame.transform.scale(base_img, (25, 25))
-    # 创建一个新的pygame surface作为背景
-    canvas = pygame.Surface((task_config.width, task_config.height))  # 创建一个新的pygame surface作为背景
-    canvas.fill((255, 255, 255))  # 设置背景为白色
+    w, h = task_config.width, task_config.height
+    ss = getattr(task_config, 'ssaa', 1)
+    if pygame is None:
+        # 降级：返回空画布
+        return np.zeros((h, w, 3), dtype=np.uint8)
 
-    # 绘制轨迹
-    for i in range(len(tracker_trajectory) - 1):
-        pygame.draw.line(canvas, (0, 0, 255), tracker_trajectory[i], tracker_trajectory[i + 1], 1)
-    for i in range(len(target_trajectory) - 1):
-        pygame.draw.line(canvas, (255, 0, 0), target_trajectory[i], target_trajectory[i + 1], 1)
+    surface = pygame.Surface((w * ss, h * ss), flags=pygame.SRCALPHA)
+    surface.fill(task_config.background_color)
 
-    # 在指定位置绘制智能体和目标的图像
-    canvas.blit(tracker_img,
-                (tracker['x'] - tracker_img.get_rect().bottom / 2 + task_config.pixel_size // 2,
-                 tracker['y'] - tracker_img.get_rect().right / 2 + task_config.pixel_size // 2))
-    canvas.blit(target_img,
-                (target['x'] - target_img.get_rect().bottom / 2 + task_config.pixel_size // 2,
-                 target['y'] - target_img.get_rect().right / 2 + task_config.pixel_size // 2))
-    canvas.blit(base_img,
-                (base['x'] - base_img.get_rect().bottom / 2 + task_config.pixel_size // 2,
-                 base['y'] - base_img.get_rect().right / 2 + task_config.pixel_size // 2))
+    _draw_grid(surface)
+    _draw_trail(surface, tracker_trajectory, task_config.trail_color_tracker, task_config.trail_width)
+    _draw_trail(surface, target_trajectory, task_config.trail_color_target, task_config.trail_width)
+
+    base_center = (base['x'] + task_config.pixel_size / 2.0, base['y'] + task_config.pixel_size / 2.0)
+    _draw_base(surface, base_center)
+    _draw_agent(surface, tracker, task_config.tracker_color)
+    _draw_agent(surface, target, task_config.target_color)
+
+    if ss > 1:
+        canvas = pygame.transform.smoothscale(surface, (w, h))
+        canvas = pygame.surfarray.array3d(canvas).swapaxes(0, 1)
+    else:
+        canvas = pygame.surfarray.array3d(surface).swapaxes(0, 1)
     return canvas
 
 
 def agent_move(agent, action, moving_size):
-    """
-    根据组合动作更新智能体的位置。
-    
-    参数:
-    - agent: 包含智能体位置和朝向信息的字典
-    - action: 整数组合动作，取值范围0~47，其中：
-              angle_index = action // 3 对应相对角度（单位：度），从 -45 到 45 离散取值
-              speed_index = action % 3 对应速度选择：
-                  0 -> 静止（0）
-                  1 -> 半速（moving_size/2）
-                  2 -> 全速（moving_size）
-    - moving_size: 全速时的移动步长
-    
-    返回:
-    - 更新后的智能体字典
-    """
-    # 解码动作: 重新调整为先选角度后选速度
-    angle_index = action // 3
-    speed_index = action % 3
+    angle_index = int(action) // 3
+    speed_index = int(action) % 3
 
-    # 根据速度索引确定实际速度
-    if speed_index == 0:
-        speed = 0
-    elif speed_index == 1:
-        speed = moving_size / 2
-    else:
-        speed = moving_size
+    speed = 0.0 if speed_index == 0 else (moving_size / 2.0 if speed_index == 1 else moving_size)
+    angle_offsets = np.linspace(-45.0, 45.0, 16)
+    angle_offset = float(angle_offsets[angle_index])
 
-    # 离散角度列表：16个从 -45 到 45 度的值
-    angle_offsets = np.linspace(-45, 45, 16)
-    angle_offset = angle_offsets[angle_index]
+    current_angle = float(agent.get('theta', 0.0))
+    new_angle = (current_angle + angle_offset) % 360.0
+    agent['theta'] = float(new_angle)
 
-    # 计算新的朝向（当前朝向加上角度偏移），确保结果在 0-360 度之间
-    current_angle = agent.get('theta', 0)
-    new_angle = (current_angle + angle_offset) % 360
-    agent['theta'] = new_angle
-
-    # 根据新的朝向和速度更新位置
-    new_x = agent['x'] + speed * np.cos(np.deg2rad(new_angle))
-    new_y = agent['y'] + speed * np.sin(np.deg2rad(new_angle))
-    
-    agent['x'] = np.clip(new_x, 0, task_config.width - task_config.pixel_size)
-    agent['y'] = np.clip(new_y, 0, task_config.height - task_config.pixel_size)
-    
+    agent['x'] = float(np.clip(agent['x'] + speed * math.cos(math.radians(new_angle)),
+                               0, task_config.width - task_config.pixel_size))
+    agent['y'] = float(np.clip(agent['y'] + speed * math.sin(math.radians(new_angle)),
+                               0, task_config.height - task_config.pixel_size))
     return agent
-
-# def agent_move(agent, action, moving_size):
-#     """
-#     根据组合动作更新智能体的位置（全速前进）。
-    
-#     参数:
-#     - agent: 包含智能体位置和朝向信息的字典
-#     - action: 整数，取值范围0~35，对应-70到70度的角偏差（全速运动）
-#     - moving_size: 全速移动时的步长
-    
-#     返回:
-#     - 更新后的智能体字典
-#     """
-#     # 离散角度列表：36个从 -70 到 70 度的值
-#     angle_offsets = np.linspace(-70, 70, 48)
-#     angle_offset = angle_offsets[action]
-    
-#     # 计算新的朝向（当前朝向加上角偏差），确保结果在 0-360 度之间
-#     current_angle = agent.get('theta', 0)
-#     new_angle = (current_angle + angle_offset) % 360
-#     agent['theta'] = new_angle
-    
-#     # 全速运动
-#     new_x = agent['x'] + moving_size * np.cos(np.deg2rad(new_angle))
-#     new_y = agent['y'] + moving_size * np.sin(np.deg2rad(new_angle))
-    
-#     agent['x'] = np.clip(new_x, 0, task_config.width - task_config.pixel_size)
-#     agent['y'] = np.clip(new_y, 0, task_config.height - task_config.pixel_size)
-    
-#     return agent
 
 
 def target_nav(target, tracker, base, moving_size, frame_count):
-    """
-    改进的连续逃逸导航策略，基于距离动态调整躲避强度，调整横向偏移频率并保持恒定速度。
+    tracker_vec = np.array([tracker['x'] - target['x'], tracker['y'] - target['y']], dtype=float)
+    base_vec = np.array([base['x'] - target['x'], base['y'] - target['y']], dtype=float)
 
-    参数:
-    - target: 当前目标的位置字典，包含{'x': float, 'y': float}，可选'theta'
-    - tracker: 当前追踪者的位置字典
-    - base: 基地位置字典
-    - moving_size: 移动步长
-    - frame_count: 帧计数器（用于周期机动）
+    d_t = float(np.linalg.norm(tracker_vec))
+    d_b = float(np.linalg.norm(base_vec))
 
-    返回:
-    - new_pos: 新位置字典（增加'theta'字段，表示新的朝向）
-    - distance_to_tracker: 与追踪者的距离
-    - distance_to_base: 与基地的距离
-    - new_frame_count: 更新后的帧计数器
-    - new_theta: 目标新的朝向（角度，单位：度）
-    """
-    # 计算相对向量和距离
-    tracker_vec = np.array([tracker['x'] - target['x'], tracker['y'] - target['y']])
-    base_vec = np.array([base['x'] - target['x'], base['y'] - target['y']])
-    
-    distance_to_tracker = np.linalg.norm(tracker_vec)
-    distance_to_base = np.linalg.norm(base_vec)
-    
-    # 基础方向归一化
-    if distance_to_base > 0:
-        base_dir = base_vec / distance_to_base
+    base_dir = base_vec / d_b if d_b > 1e-6 else np.zeros(2, dtype=float)
+    safe_radius = 150.0
+    scale = min(safe_radius / max(d_t, 1e-6), 1.0)
+
+    if d_t > 1e-6:
+        perp = np.array([-tracker_vec[1], tracker_vec[0]], dtype=float) / d_t
     else:
-        base_dir = np.zeros(2)
+        perp = np.array([0.0, 0.0], dtype=float)
 
-    # 动态躲避参数计算
-    safe_radius = 150  # 最大影响范围
-    min_scale = 0.2    # 最小躲避强度
-    distance_scale = min(safe_radius / max(distance_to_tracker, 1e-5), 1)  # 距离影响系数
-    
-    # 生成横向偏移方向（始终垂直于追踪方向）
-    if np.linalg.norm(tracker_vec) > 1e-5:
-        tracker_dir = tracker_vec / np.linalg.norm(tracker_vec)
-        lateral_dir = np.array([-tracker_dir[1], tracker_dir[0]])  # 逆时针垂直方向
-        lateral_dir *= np.sign(math.sin(frame_count * 0.1))
-    else:
-        lateral_dir = np.zeros(2)
+    move_dir = base_dir + perp * scale * 2.5
+    if d_t < 50.0:
+        move_dir = perp
 
-    # 方向合成：基础方向 + 动态横向躲避
-    move_dir = (base_dir + lateral_dir * distance_scale * 2.5)
-    
-    if distance_to_tracker < 50:
-        move_dir += lateral_dir * 1.5
-    
-    # 归一化方向并设置恒定速度
-    norm = np.linalg.norm(move_dir)
-    if norm > 1e-5:
+    norm = float(np.linalg.norm(move_dir))
+    if norm > 1e-6:
         move_dir = move_dir / norm
     else:
-        move_dir = base_dir
+        move_dir = np.zeros(2, dtype=float)
 
     new_pos = target.copy()
-    new_pos['x'] += move_dir[0] * moving_size
-    new_pos['y'] += move_dir[1] * moving_size
-
-    # 边界约束
-    new_pos['x'] = np.clip(new_pos['x'], 0, task_config.width - task_config.pixel_size)
-    new_pos['y'] = np.clip(new_pos['y'], 0, task_config.height - task_config.pixel_size)
-
-    # 根据移动方向计算新的朝向，转换为角度（确保在 0-360 范围内）
-    if norm > 1e-5:
-        new_theta = math.degrees(math.atan2(move_dir[1], move_dir[0])) % 360
-    else:
-        new_theta = target.get('theta', 0)
-
+    new_pos['x'] = float(np.clip(new_pos['x'] + move_dir[0] * moving_size, 0, task_config.width - task_config.pixel_size))
+    new_pos['y'] = float(np.clip(new_pos['y'] + move_dir[1] * moving_size, 0, task_config.height - task_config.pixel_size))
+    new_theta = float((math.degrees(math.atan2(move_dir[1], move_dir[0])) % 360.0)) if norm > 1e-6 else float(target.get('theta', 0.0))
     new_pos['theta'] = new_theta
+    return new_pos
 
-    return new_pos, distance_to_tracker, distance_to_base, frame_count + 1, new_theta
 
+def tracker_nav(tracker, target, moving_size):
+    vec = np.array([target['x'] - tracker['x'], target['y'] - tracker['y']], dtype=float)
+    d = float(np.linalg.norm(vec))
+    if d > 1e-6:
+        dir = vec / d
+    else:
+        dir = np.zeros(2, dtype=float)
+    bias = 0.10
+    dir = (1.0 - bias) * dir + bias * np.array([1.0, 0.0], dtype=float)
+    n = float(np.linalg.norm(dir))
+    dir = dir / n if n > 1e-6 else dir
+
+    nx = float(np.clip(tracker['x'] + dir[0] * moving_size, 0, task_config.width - task_config.pixel_size))
+    ny = float(np.clip(tracker['y'] + dir[1] * moving_size, 0, task_config.height - task_config.pixel_size))
+    theta = float((math.degrees(math.atan2(dir[1], dir[0])) % 360.0)) if n > 1e-6 else float(tracker.get('theta', 0.0))
+    new_pos = dict(tracker)
+    new_pos['x'] = nx
+    new_pos['y'] = ny
+    new_pos['theta'] = theta
+    return new_pos
