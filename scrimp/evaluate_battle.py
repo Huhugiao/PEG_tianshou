@@ -1,24 +1,24 @@
 import os
 import numpy as np
 import torch
-import ray
 import argparse
 import pandas as pd
 import time
 from multiprocessing import Pool, cpu_count
-import datetime  # 修改这里
-import task_config
+import datetime
+import map_config
 
 from env import TrackingEnv
 from model import Model
 from alg_parameters import *
 from util import make_gif
+from expert_policies import get_expert_target_action_pair, get_expert_tracker_action_pair
 
 
 class BattleConfig:
     def __init__(self, 
-                 tracker_type="rule", 
-                 target_type="rule",
+                 tracker_type="expert_rule", 
+                 target_type="expert_rule",
                  tracker_model_path=None,
                  target_model_path=None,
                  episodes=100,
@@ -27,7 +27,7 @@ class BattleConfig:
                  gif_dir="./battle_gifs",
                  seed=1234):
         
-        self.tracker_type = tracker_type  # "rule" 或 "policy"
+        self.tracker_type = tracker_type  # "rule", "expert_rule", 或 "policy"
         self.target_type = target_type    # "rule", "expert_rule", 或 "policy"
         self.tracker_model_path = tracker_model_path
         self.target_model_path = target_model_path
@@ -37,121 +37,52 @@ class BattleConfig:
         self.gif_dir = gif_dir
         self.seed = seed
         
-        # 确保输出目录存在
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         if not os.path.exists(gif_dir):
             os.makedirs(gif_dir)
             
-        # 根据对战类型自动确定mission
+        # mission推断：任一侧为专家规则 -> 3；其余维持原逻辑
         if tracker_type == "rule" and target_type == "rule":
-            self.mission = -1  # 自定义mission：两个都是规则
+            self.mission = -1
+        elif "expert_rule" in {tracker_type, target_type}:
+            self.mission = 3
         elif tracker_type == "policy" and target_type == "rule":
-            self.mission = 2   # tracker是policy，target是rule
+            self.mission = 2
         elif tracker_type == "rule" and target_type == "policy":
-            self.mission = 1   # tracker是rule，target是policy
-        elif tracker_type == "rule" and target_type == "expert_rule":
-            self.mission = 3   # tracker是rule，target使用专家规则
-        elif tracker_type == "policy" and target_type == "expert_rule":
-            self.mission = 3   # tracker是policy，target使用专家规则
+            self.mission = 1
         else:
-            self.mission = 2   # 都是policy
+            self.mission = 2
 
-def get_expert_target_action(observation):
-    # 归一化分量
-    t2t_x_n, t2t_y_n = observation[4], observation[5]
-    t2b_x_n, t2b_y_n = observation[8], observation[9]
-    current_angle = observation[11] * 360
-
-    # 转为像素坐标系下的向量与距离
-    dx_t = t2t_x_n * task_config.width
-    dy_t = t2t_y_n * task_config.height
-    dx_b = t2b_x_n * task_config.width
-    dy_b = t2b_y_n * task_config.height
-
-    distance_to_tracker = np.hypot(dx_t, dy_t)
-    distance_to_base = np.hypot(dx_b, dy_b)
-
-    base_angle = np.arctan2(dy_b, dx_b)
-    # 从 target 指向 tracker 的向量（用于逃逸/横向）
-    tgt_to_trk = np.array([-dx_t, -dy_t], dtype=np.float32)
-    escape_angle = np.arctan2(tgt_to_trk[1], tgt_to_trk[0])  # 远离 tracker
-
-    # 判定 tracker 是否“在路上”：投影到 target->base 线段
-    v = np.array([dx_b, dy_b], dtype=np.float32)
-    u = np.array([ -dx_t, -dy_t], dtype=np.float32)  # target->tracker
-    v2 = np.dot(v, v) + 1e-6
-    t = float(np.dot(u, v) / v2)  # 0~1 表示在 target->base 线段之间
-    # 与线路的垂距
-    perp_dist = np.linalg.norm(u - t * v)
-
-    # 像素阈值（按你的地图改）
-    NEAR = 60.0
-    MID = 180.0
-    CORRIDOR = 40.0  # 认为“在路上”的通道宽度
-
-    if t < 0 or t > 1 or perp_dist > CORRIDOR:
-        # tracker 不在 target->base 路径上：直冲基地
-        desired_angle = base_angle
-    else:
-        # tracker 在路径上
-        if distance_to_tracker < NEAR:
-            desired_angle = escape_angle
-        elif distance_to_tracker < MID:
-            # 横向机动（与逃逸方向垂直），选择更接近基地一侧
-            lateral = escape_angle + np.pi/2
-            right_score = abs(np.cos(lateral - base_angle))
-            left_score  = abs(np.cos((lateral + np.pi) - base_angle))
-            desired_angle = lateral if right_score <= left_score else (lateral + np.pi)
-        else:
-            desired_angle = base_angle
-
-    desired_angle_deg = (np.degrees(desired_angle) + 360) % 360
-    relative_angle = ((desired_angle_deg - current_angle + 180) % 360) - 180
-    relative_angle = float(np.clip(relative_angle, -45, 45))
-
-    # 将相对角映射到 0..15
-    direction_index = int(np.clip(round((relative_angle + 45) / 90 * 15), 0, 15))
-    speed_level = 2  # 全速
-    return direction_index * 3 + speed_level
 
 def run_battle_episode(config, episode_idx):
     """运行单个对战回合"""
-    # 设置设备
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    
-    # 创建环境
     env = TrackingEnv(mission=config.mission)
     
-    # 初始化模型
     tracker_model = None
     target_model = None
     
-    # 加载tracker模型
     if config.tracker_type == "policy":
         tracker_model = Model(device, global_model=False)
         model_dict = torch.load(config.tracker_model_path, map_location=device)
         tracker_model.network.load_state_dict(model_dict['model'])
     
-    # 加载target模型
     if config.target_type == "policy":
         target_model = Model(device, global_model=False)
         model_dict = torch.load(config.target_model_path, map_location=device)
         target_model.network.load_state_dict(model_dict['model'])
     
-    # 重置环境
     obs, _ = env.reset()
     done = False
     episode_step = 0
-    episode_reward = 0  # 从tracker的角度看的奖励
+    episode_reward = 0
     tracker_caught_target = False
     target_reached_base = False
     
-    # 决定是否保存GIF
-    save_gif = (episode_idx % config.save_gif_freq == 0)
+    save_gif = (config.save_gif_freq > 0 and episode_idx % config.save_gif_freq == 0)
     episode_frames = [] if save_gif else None
     
-    # 初始化隐藏状态
     tracker_hidden = None
     target_hidden = None
     
@@ -163,46 +94,37 @@ def run_battle_episode(config, episode_idx):
         except Exception as e:
             print(f"Error capturing initial frame: {e}")
     
-    # 开始回合
     while not done and episode_step < EnvParameters.EPISODE_LEN:
-        # 获取tracker动作
+        # tracker
         if config.tracker_type == "policy":
-            tracker_action, tracker_hidden, _, _ = tracker_model.evaluate(obs, tracker_hidden, greedy=True)
+            tracker_action, tracker_hidden, _, _, _ = tracker_model.evaluate(obs, tracker_hidden, greedy=True)
+        elif config.tracker_type == "expert_rule":
+            tracker_action = get_expert_tracker_action_pair(obs)
         else:
-            # For rule-based tracker, we need to provide a valid action or let environment handle it
-            # Check if environment expects specific action format
-            tracker_action = -1  # Use -1 to indicate rule-based action
+            tracker_action = -1  # 规则
         
-        # 获取target动作
+        # target
         if config.target_type == "policy":
-            target_action, target_hidden, _, _ = target_model.evaluate(obs, target_hidden, greedy=True)
+            target_action, target_hidden, _, _, _ = target_model.evaluate(obs, target_hidden, greedy=True)
         elif config.target_type == "expert_rule":
-            # 使用Runner中的专家规则
-            target_action = get_expert_target_action(obs)
+            target_action = get_expert_target_action_pair(obs)
         else:
-            # For rule-based target, use -1 to indicate rule-based action
             target_action = -1
         
-        # 执行动作
         try:
             obs, reward, terminated, truncated, info = env.step(tracker_action, target_action)
             done = terminated or truncated
-            # 记录结果
             episode_reward += reward
-            
-            # 直接通过terminated和truncated判断胜负
             if terminated:
-                target_reached_base = True  # Target reaches base is handled by terminated
+                target_reached_base = True
             if truncated:
-                tracker_caught_target = True  # Tracker catches target is handled by truncated
-            
+                tracker_caught_target = True
         except Exception as e:
             print(f"Error in step: {e}")
             break
         
         episode_step += 1
         
-        # 保存GIF帧
         if save_gif:
             try:
                 frame = env.render(mode='rgb_array')
@@ -211,19 +133,16 @@ def run_battle_episode(config, episode_idx):
             except Exception as e:
                 print(f"Error capturing frame: {e}")
     
-    # 保存GIF
     if save_gif and episode_frames:
         try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # 修改这里
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             gif_path = f"{config.gif_dir}/battle_{config.tracker_type}_vs_{config.target_type}_{episode_idx}_{timestamp}.gif"
             make_gif(episode_frames, gif_path)
         except Exception as e:
             print(f"Error saving GIF: {e}")
     
-    # 关闭环境
     env.close()
     
-    # 返回结果
     result = {
         "episode_id": episode_idx,
         "steps": episode_step,
@@ -241,27 +160,20 @@ def run_battle(config):
     print(f"开始对战评估: {config.tracker_type} tracker vs {config.target_type} target")
     print(f"总回合数: {config.episodes}, 每{config.save_gif_freq}回合保存一次GIF")
     
-    # 设置随机种子
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     
-    # 使用进程池并行运行对战
-    num_processes = min(cpu_count(), 8)  # 限制最大进程数
+    num_processes = min(cpu_count(), 8)
     print(f"使用{num_processes}个并行进程运行")
     
     start_time = time.time()
-    
-    # 准备参数
     args = [(config, i) for i in range(config.episodes)]
     
-    # 使用进程池并行执行
     with Pool(processes=num_processes) as pool:
         results = pool.starmap(run_battle_episode, args)
     
-    # 处理结果
     df = pd.DataFrame(results)
     
-    # 计算统计数据
     stats = {
         "total_episodes": len(df),
         "avg_steps": df["steps"].mean(),
@@ -273,16 +185,13 @@ def run_battle(config):
         "target_type": config.target_type
     }
     
-    # 保存详细结果
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # 修改这里
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     results_path = f"{config.output_dir}/battle_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
     df.to_csv(results_path, index=False)
      
-    # 保存统计结果
     stats_path = f"{config.output_dir}/stats_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
     pd.DataFrame([stats]).to_csv(stats_path, index=False)
     
-    # 打印统计信息
     print("\n对战评估结果:")
     print(f"{'Tracker类型':<15}: {config.tracker_type}")
     print(f"{'Target类型':<15}: {config.target_type}")
@@ -301,8 +210,8 @@ def run_battle(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Agent Battle Evaluation')
-    parser.add_argument('--tracker', type=str, default='rule', choices=['rule', 'policy'],
-                        help='Tracker agent type (rule or policy)')
+    parser.add_argument('--tracker', type=str, default='expert_rule', choices=['rule', 'expert_rule', 'policy'],
+                        help='Tracker agent type (rule, expert_rule, or policy)')
     parser.add_argument('--target', type=str, default='expert_rule', choices=['rule', 'expert_rule', 'policy'],
                         help='Target agent type (rule, expert_rule, or policy)')
     parser.add_argument('--tracker_model', type=str, default=None,
@@ -322,13 +231,11 @@ if __name__ == "__main__":
                         
     args = parser.parse_args()
     
-    # 验证参数
     if args.tracker == 'policy' and args.tracker_model is None:
         parser.error("--tracker_model is required when tracker is 'policy'")
     if args.target == 'policy' and args.target_model is None:
         parser.error("--target_model is required when target is 'policy'")
     
-    # 创建配置并运行评估
     config = BattleConfig(
         tracker_type=args.tracker,
         target_type=args.target,

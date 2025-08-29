@@ -247,8 +247,7 @@ def main():
                                                   save_gif=(curr_steps - last_gif_t >= GIF_INTERVAL),
                                                   curr_steps=curr_steps)
                 write_to_tensorboard(global_summary, curr_steps, performance_dict=eval_perf, evaluate=True)
-                if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
-                    write_to_wandb(curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
+                write_to_wandb(curr_steps, performance_dict=eval_perf, evaluate=True)
                 if curr_steps - last_gif_t >= GIF_INTERVAL:
                     last_gif_t = curr_steps
 
@@ -280,19 +279,19 @@ def evaluate_single_agent(eval_env, agent_model, opponent_model, device, save_gi
         ep_len = 0
         reward_cnt = 0
         while not done and ep_len < EnvParameters.EPISODE_LEN:
-            agent_action, _, _, _ = agent_model.evaluate(obs, greedy=True)
+            agent_pair, _, _, _, _ = agent_model.evaluate(obs, greedy=True)
             if TrainingParameters.AGENT_TO_TRAIN == "tracker":
                 if opponent_model is not None:
-                    opp_action, _, _, _ = opponent_model.evaluate(obs, greedy=True)
-                    tracker_action, target_action = agent_action, opp_action
+                    opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
+                    tracker_action, target_action = agent_pair, opp_pair
                 else:
-                    tracker_action, target_action = agent_action, -1
+                    tracker_action, target_action = agent_pair, -1
             else:
                 if opponent_model is not None:
-                    opp_action, _, _, _ = opponent_model.evaluate(obs, greedy=True)
-                    tracker_action, target_action = opp_action, agent_action
+                    opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
+                    tracker_action, target_action = opp_pair, agent_pair
                 else:
-                    tracker_action, target_action = -1, agent_action
+                    tracker_action, target_action = -1, agent_pair
 
             obs, reward, terminated, truncated, info = eval_env.step((tracker_action, target_action))
             done = terminated or truncated

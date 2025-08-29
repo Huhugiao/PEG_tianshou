@@ -6,6 +6,7 @@ from alg_parameters import *
 from model import Model
 from util import set_global_seeds, update_perf
 from env import TrackingEnv
+from expert_policies import get_expert_tracker_action_pair, get_expert_target_action_pair
 
 
 @ray.remote(num_cpus=1, num_gpus=SetupParameters.NUM_GPU / max((TrainingParameters.N_ENVS + 1), 1))
@@ -43,7 +44,6 @@ class Runner(object):
             if opponent_weights is not None and self.opponent_model is not None:
                 self.opponent_model.set_weights(opponent_weights)
 
-            # 用 rewards 存回报，之后用 GAE 生成 returns
             data = {'vector': [], 'rewards': [], 'values': [], 'actions': [], 'ps': [], 'hidden': [], 'dones': []}
             performance_dict = {
                 'per_r': [], 'per_in_r': [], 'per_ex_r': [], 'per_valid_rate': [],
@@ -61,20 +61,20 @@ class Runner(object):
             episodes = 0
 
             for _ in range(TrainingParameters.N_STEPS):
-                agent_action, self.agent_hidden, v_pred, prob = self.agent_model.step(self.vector, self.agent_hidden)
+                agent_pair, self.agent_hidden, v_pred, prob, agent_index = self.agent_model.step(self.vector, self.agent_hidden)
 
                 if self.mission == 0:
                     if self.opponent_model is not None:
-                        opp_action, self.opponent_hidden, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
-                        tracker_action, target_action = agent_action, opp_action
+                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
+                        tracker_action, target_action = agent_pair, opp_pair
                     else:
-                        tracker_action, target_action = agent_action, -1
+                        tracker_action, target_action = agent_pair, -1
                 else:
                     if self.opponent_model is not None:
-                        opp_action, self.opponent_hidden, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
-                        tracker_action, target_action = opp_action, agent_action
+                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
+                        tracker_action, target_action = opp_pair, agent_pair
                     else:
-                        tracker_action, target_action = -1, agent_action
+                        tracker_action, target_action = -1, agent_pair
 
                 obs, reward, terminated, truncated, info = self.env.step((tracker_action, target_action))
                 done = terminated or truncated
@@ -83,7 +83,7 @@ class Runner(object):
 
                 data['vector'].append(self.vector.astype(np.float32))
                 data['values'].append(np.float32(v_pred))
-                data['actions'].append(np.int64(agent_action))
+                data['actions'].append(np.int64(agent_index))      # 仍保存离散索引用于PPO
                 data['ps'].append(prob.astype(np.float32))
                 data['hidden'].append(0.0)
                 data['rewards'].append(np.float32(agent_reward))
@@ -136,15 +136,16 @@ class Runner(object):
             for _ in range(TrainingParameters.N_STEPS):
                 vectors.append(obs.astype(np.float32))
                 if self.mission == 0:
-                    expert_action = self._get_expert_tracker_action(obs)
+                    expert_pair = get_expert_tracker_action_pair(obs)
                 else:
-                    expert_action = self._get_expert_target_action(obs)
-                actions.append(np.int64(expert_action))
+                    expert_pair = get_expert_target_action_pair(obs)
+                expert_index = Model.pair_to_idx(expert_pair[0], expert_pair[1])  # 量化为标签
+                actions.append(np.int64(expert_index))
 
                 if self.mission == 0:
-                    tracker_action, target_action = expert_action, -1
+                    tracker_action, target_action = expert_pair, -1
                 else:
-                    tracker_action, target_action = -1, expert_action
+                    tracker_action, target_action = -1, expert_pair
                 obs, _, terminated, truncated, _ = self.imitation_env.step((tracker_action, target_action))
                 if terminated or truncated:
                     obs, _ = self.imitation_env.reset()
@@ -176,70 +177,3 @@ class Runner(object):
         data['ps'] = np.asarray(data['ps'], dtype=np.float32)
         data['hidden'] = np.asarray(data['hidden'], dtype=np.float32)
         return data
-
-    def _get_expert_tracker_action(self, observation):
-        rel_x = float(observation[4]) if len(observation) > 4 else 0.0
-        rel_y = float(observation[5]) if len(observation) > 5 else 0.0
-        angle = np.degrees(np.arctan2(rel_y, rel_x))
-        angle = (angle + 360.0) % 360.0
-        current_angle = float(observation[10] * 360.0) if len(observation) > 10 else 0.0
-        delta = angle - current_angle
-        if delta > 180:
-            delta -= 360
-        if delta < -180:
-            delta += 360
-        delta = np.clip(delta, -45.0, 45.0)
-        direction_step = 90.0 / 15.0
-        direction_index = int(round(delta / direction_step)) + 8
-        direction_index = int(np.clip(direction_index, 0, 15))
-        speed_level = 2
-        tracker_action = direction_index * 3 + speed_level
-        return int(tracker_action)
-
-    def _get_expert_target_action(self, observation):
-        ttx = float(observation[4]) if len(observation) > 4 else 0.0
-        tty = float(observation[5]) if len(observation) > 5 else 0.0
-        tbx = float(observation[8]) if len(observation) > 8 else 0.0
-        tby = float(observation[9]) if len(observation) > 9 else 0.0
-        current_angle = float(observation[11] * 360.0) if len(observation) > 11 else 0.0
-
-        distance_to_tracker = float(np.hypot(ttx, tty))
-        distance_to_base = float(np.hypot(tbx, tby))
-
-        base_angle = np.arctan2(tby, tbx)
-        escape_from_tracker_angle = np.arctan2(tty, ttx)
-
-        angle_to_base = np.degrees(base_angle)
-        angle_to_escape = np.degrees(escape_from_tracker_angle)
-        angle_diff = abs(angle_to_base - angle_to_escape)
-        angle_diff = min(angle_diff, 360 - angle_diff)
-
-        CRITICAL_DISTANCE = 0.1
-        INTERCEPTION_ANGLE = 60
-
-        if distance_to_base < 0.08:
-            desired_angle = base_angle
-        elif distance_to_tracker < CRITICAL_DISTANCE:
-            desired_angle = escape_from_tracker_angle
-        elif angle_diff > INTERCEPTION_ANGLE:
-            desired_angle = escape_from_tracker_angle
-        else:
-            w = 0.6
-            perp = escape_from_tracker_angle + np.pi / 2.0
-            desired_angle = np.arctan2(w * np.sin(base_angle) + (1 - w) * np.sin(perp),
-                                       w * np.cos(base_angle) + (1 - w) * np.cos(perp))
-
-        desired_angle_deg = (np.degrees(desired_angle) + 360) % 360
-        turn = desired_angle_deg - current_angle
-        if turn > 180:
-            turn -= 360
-        elif turn < -180:
-            turn += 360
-        relative_angle = np.clip(turn, -45.0, 45.0)
-
-        direction_step = 90.0 / 15.0
-        direction_index = int(round(relative_angle / direction_step)) + 8
-        direction_index = int(np.clip(direction_index, 0, 15))
-        speed_level = 2
-        expert_action = direction_index * 3 + speed_level
-        return int(expert_action)

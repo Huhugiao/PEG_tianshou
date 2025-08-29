@@ -11,6 +11,30 @@ from nets import ProtectingNet
 class Model(object):
     """Standard PPO model for Protecting environment - single agent"""
 
+    # 离散索引 <-> (角度, 速度因子) 映射，用于训练与采样
+    ANGLE_OFFSETS = np.linspace(-45.0, 45.0, 16, dtype=np.float32)  # 16个角度bin
+    SPEED_FACTORS = np.array([0.0, 0.5, 1.0], dtype=np.float32)     # 3个速度档
+
+    @staticmethod
+    def idx_to_pair(action_idx: int):
+        aidx = int(action_idx) // 3
+        sidx = int(action_idx) % 3
+        angle = float(Model.ANGLE_OFFSETS[int(np.clip(aidx, 0, 15))])
+        speed_factor = float(Model.SPEED_FACTORS[int(np.clip(sidx, 0, 2))])
+        return (angle, speed_factor)
+
+    @staticmethod
+    def pair_to_idx(angle_delta_deg: float, speed_factor: float):
+        # 裁切
+        angle = float(np.clip(angle_delta_deg, -45.0, 45.0))
+        sf = float(np.clip(speed_factor, 0.0, 1.0))
+        # 角度bin（-45~45，共16个，约6度一档）
+        direction_step = 90.0 / 15.0  # 6度
+        dir_idx = int(np.clip(int(round(angle / direction_step)) + 8, 0, 15))
+        # 速度bin就近映射到[0, 0.5, 1.0]
+        sidx = int(np.argmin(np.abs(Model.SPEED_FACTORS - sf)))
+        return int(dir_idx * 3 + sidx)
+
     def __init__(self, device, global_model=False):
         self.device = device
         self.network = ProtectingNet().to(device)
@@ -41,8 +65,9 @@ class Model(object):
         policy, value, _ = self.network(input_vector)
         prob = policy[0].clamp_min(1e-8)
         prob = prob / prob.sum()
-        action = int(torch.multinomial(prob, 1).item())
-        return action, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy()
+        action_index = int(torch.multinomial(prob, 1).item())
+        action_pair = Model.idx_to_pair(action_index)
+        return action_pair, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy(), action_index
 
     @torch.no_grad()
     def evaluate(self, vector, hidden_state=None, greedy=True):
@@ -50,8 +75,9 @@ class Model(object):
         policy, value, _ = self.network(input_vector)
         prob = policy[0].clamp_min(1e-8)
         prob = prob / prob.sum()
-        action = int(torch.argmax(prob).item()) if greedy else int(torch.multinomial(prob, 1).item())
-        return action, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy()
+        action_index = int(torch.argmax(prob).item()) if greedy else int(torch.multinomial(prob, 1).item())
+        action_pair = Model.idx_to_pair(action_index)
+        return action_pair, None, float(value.squeeze().cpu().numpy()), prob.cpu().numpy(), action_index
 
     def train(self, vector, returns, values, actions, old_probs, hidden_state, train_valid=None, blocking=None, message=None):
         self.net_optimizer.zero_grad()

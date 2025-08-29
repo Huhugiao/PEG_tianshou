@@ -9,8 +9,8 @@ class EnvParameters:
 
 
 class TrainingParameters:
-    lr = 1e-5  # learning rate
-    GAMMA = 0.95  # discount factor
+    lr = 5e-4  # learning rate
+    GAMMA = 0.99  # discount factor
     LAM = 0.95  # GAE lambda (for future use)
     CLIP_RANGE = 0.2  # PPO clipping range
     MAX_GRAD_NORM = 10  # gradient clipping
