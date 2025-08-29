@@ -7,7 +7,7 @@ height = 600
 # 基础单位与速度（浮点）
 pixel_size = 4
 target_speed = 8
-tracker_speed = 6.0
+tracker_speed = 4.8
 
 # 判定半径
 capture_radius = 10

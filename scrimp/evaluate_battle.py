@@ -54,6 +54,10 @@ class BattleConfig:
         else:
             self.mission = 2
 
+        # 本次评估运行目录将由 run_battle 创建并写入
+        self.run_dir = None
+        self.run_timestamp = None
+
 
 def run_battle_episode(config, episode_idx):
     """运行单个对战回合"""
@@ -135,8 +139,9 @@ def run_battle_episode(config, episode_idx):
     
     if save_gif and episode_frames:
         try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            gif_path = f"{config.gif_dir}/battle_{config.tracker_type}_vs_{config.target_type}_{episode_idx}_{timestamp}.gif"
+            # 所有GIF保存到本次评估的运行目录
+            ep_name = f"ep_{episode_idx:04d}.gif"
+            gif_path = os.path.join(config.run_dir, ep_name)
             make_gif(episode_frames, gif_path)
         except Exception as e:
             print(f"Error saving GIF: {e}")
@@ -159,6 +164,14 @@ def run_battle(config):
     """运行完整的对战测试"""
     print(f"开始对战评估: {config.tracker_type} tracker vs {config.target_type} target")
     print(f"总回合数: {config.episodes}, 每{config.save_gif_freq}回合保存一次GIF")
+
+    # 为本次评估创建独立输出目录
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"battle_{config.tracker_type}_vs_{config.target_type}_{timestamp}"
+    config.run_timestamp = timestamp
+    config.run_dir = os.path.join(config.output_dir, run_name)
+    os.makedirs(config.run_dir, exist_ok=True)
+    print(f"结果目录: {config.run_dir}")
     
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -185,11 +198,11 @@ def run_battle(config):
         "target_type": config.target_type
     }
     
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = f"{config.output_dir}/battle_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
+    # 本次评估的 CSV 均保存在运行目录
+    results_path = os.path.join(config.run_dir, "results.csv")
     df.to_csv(results_path, index=False)
      
-    stats_path = f"{config.output_dir}/stats_{config.tracker_type}_vs_{config.target_type}_{timestamp}.csv"
+    stats_path = os.path.join(config.run_dir, "stats.csv")
     pd.DataFrame([stats]).to_csv(stats_path, index=False)
     
     print("\n对战评估结果:")
@@ -201,8 +214,7 @@ def run_battle(config):
     print(f"{'Tracker胜率':<15}: {stats['tracker_win_rate']*100:.2f}%")
     print(f"{'Target胜率':<15}: {stats['target_win_rate']*100:.2f}%")
     print(f"{'平局率':<15}: {stats['draw_rate']*100:.2f}%")
-    print(f"详细结果已保存到: {results_path}")
-    print(f"统计结果已保存到: {stats_path}")
+    print(f"已保存到: {config.run_dir}（包含 GIF 与 CSV）")
     
     print(f"\n评估完成，用时: {time.time() - start_time:.2f}秒")
     
@@ -223,9 +235,9 @@ if __name__ == "__main__":
     parser.add_argument('--save_gif_freq', type=int, default=10,
                         help='Save GIF every N episodes (0 to disable)')
     parser.add_argument('--output_dir', type=str, default='./scrimp_battle/battle_results',
-                        help='Directory to save battle results')
+                        help='Directory to save battle results and gifs (per-run folder)')
     parser.add_argument('--gif_dir', type=str, default='./scrimp_battle/battle_gifs',
-                        help='Directory to save battle GIFs')
+                        help='Deprecated: gifs are saved into the per-run folder under output_dir')
     parser.add_argument('--seed', type=int, default=1234,
                         help='Random seed')
                         
@@ -247,5 +259,3 @@ if __name__ == "__main__":
         gif_dir=args.gif_dir,
         seed=args.seed
     )
-    
-    run_battle(config)
