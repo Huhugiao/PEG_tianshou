@@ -14,6 +14,7 @@ def _wrap_deg(delta):
         delta += 360.0
     return delta
 
+
 def get_expert_tracker_action_pair(observation):
     """
     Tracker专家策略（微分博弈解，基于 DA 视线）
@@ -28,7 +29,8 @@ def get_expert_tracker_action_pair(observation):
 
     vD = float(getattr(map_config, 'tracker_speed'))
     vA = float(max(getattr(map_config, 'target_speed'), 1e-6))
-    alpha = float(np.clip(vD / vA, 0.0, 10.0))
+    alpha = 1
+    # alpha = float(np.clip(vD / vA, 0.0, 10.0))
 
     norm_da = float(np.linalg.norm(v_d_to_a))
     if norm_da < 1e-8:

@@ -150,12 +150,12 @@ def get_canvas(target, tracker, base, tracker_trajectory, target_trajectory):
         canvas = pygame.surfarray.array3d(surface).swapaxes(0, 1)
     return canvas
 
-
-def agent_move(agent, action, moving_size):
+def agent_move(agent, action, moving_size, role=None):
     """
     action: (angle_delta_deg, speed_factor)
-      - angle_delta_deg clipped to [-45, 45]
+      - angle_delta_deg clipped per-agent to [-max_turn_deg, max_turn_deg]
       - speed_factor clipped to [0, 1], actual speed = speed_factor * moving_size
+    role: 'tracker' or 'target' (optional). 若不传，则根据 moving_size 推断。
     """
     # 兼容输入为list/tuple/np.ndarray
     if isinstance(action, (list, tuple, np.ndarray)) and len(action) == 2:
@@ -163,10 +163,29 @@ def agent_move(agent, action, moving_size):
     else:
         raise ValueError("agent_move expects action=(angle_delta_deg, speed_factor)")
 
+    # 推断角色
+    if role is None:
+        try:
+            if abs(float(moving_size) - float(getattr(map_config, 'tracker_speed'))) < 1e-6:
+                role = 'tracker'
+            elif abs(float(moving_size) - float(getattr(map_config, 'target_speed'))) < 1e-6:
+                role = 'target'
+        except Exception:
+            role = None
+
+    # 角速度限幅（按角色）
+    default_turn = float(getattr(map_config, 'max_turn_deg', 45.0))
+    if role == 'tracker':
+        max_turn = float(getattr(map_config, 'tracker_max_turn_deg', default_turn))
+    elif role == 'target':
+        max_turn = float(getattr(map_config, 'target_max_turn_deg', default_turn))
+    else:
+        max_turn = default_turn
+
     # 裁切
-    angle_delta = float(np.clip(angle_delta, -45.0, 45.0))
+    angle_delta = float(np.clip(angle_delta, -max_turn, max_turn))
     speed_factor = float(np.clip(speed_factor, 0.0, 1.0))
-    speed = float(speed_factor * moving_size)
+    speed = float(speed_factor * float(moving_size))
 
     current_angle = float(agent.get('theta', 0.0))
     new_angle = (current_angle + angle_delta) % 360.0

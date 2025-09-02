@@ -7,7 +7,12 @@ height = 600
 # 基础单位与速度（浮点）
 pixel_size = 4
 target_speed = 8
-tracker_speed = 4.8
+tracker_speed = 4
+
+# 角速度上限（新增：放在全局配置中，由 env_lib.agent_move 读取）
+max_turn_deg = 45.0                 # 通用兜底
+tracker_max_turn_deg = 35.0         # 追踪者每步最大转角（度）
+target_max_turn_deg = 35        # 目标每步最大转角（度）
 
 # 判定半径
 capture_radius = 10
@@ -66,3 +71,22 @@ def set_render_quality(mode: str):
     draw_grid = False if FAST else True
     trail_max_len = 60 if FAST else 600
     trail_width = 1 if FAST else 2
+
+# 可选：提供简单的运行时接口（外部脚本若需要可调用，不必在 evaluate_battle 中传参）
+def set_speeds(tracker: float = None, target: float = None):
+    """设置线速度；传 None 表示保持不变"""
+    global tracker_speed, target_speed
+    if tracker is not None:
+        tracker_speed = float(tracker)
+    if target is not None:
+        target_speed = float(target)
+
+def set_turn_limits(tracker_deg: float = None, target_deg: float = None, default_deg: float = None):
+    """设置每步最大转角（度）；default_deg 为通用兜底"""
+    global tracker_max_turn_deg, target_max_turn_deg, max_turn_deg
+    if tracker_deg is not None:
+        tracker_max_turn_deg = float(tracker_deg)
+    if target_deg is not None:
+        target_max_turn_deg = float(target_deg)
+    if default_deg is not None:
+        max_turn_deg = float(default_deg)
