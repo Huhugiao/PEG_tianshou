@@ -25,9 +25,9 @@ except Exception:
     wandb = None
 
 # IL cosine annealing
-IL_INITIAL_PROB = 1.0
-IL_FINAL_PROB = 1.0
-IL_DECAY_STEPS = int(TrainingParameters.N_MAX_STEPS * 0.5)
+IL_INITIAL_PROB = 0.8
+IL_FINAL_PROB = 0.1
+IL_DECAY_STEPS = 1e7
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 if not ray.is_initialized():
@@ -285,36 +285,62 @@ def evaluate_single_agent(eval_env, agent_model, opponent_model, device, save_gi
                              'per_episode_len': [], 'rewarded_rate': []}
     episode_frames = []
 
+    # 为评估创建策略管理器（如果使用随机对手）
+    eval_policy_manager = None
+    if TrainingParameters.OPPONENT_TYPE == "random":
+        from policymanager import PolicyManager
+        eval_policy_manager = PolicyManager()
+        if hasattr(TrainingParameters, 'RANDOM_OPPONENT_WEIGHTS'):
+            opponent_role = "target" if TrainingParameters.AGENT_TO_TRAIN == "tracker" else "tracker"
+            custom_weights = getattr(TrainingParameters, 'RANDOM_OPPONENT_WEIGHTS', {})
+            if opponent_role in custom_weights:
+                eval_policy_manager.set_policy_weights(opponent_role, custom_weights[opponent_role])
+
     for _ in range(EVAL_EPISODES):
         obs, _ = eval_env.reset()
         done = False
         ep_r = 0.0
         ep_len = 0
         reward_cnt = 0
+        
+        # 为每个episode选择随机对手策略
+        current_eval_policy = None
+        if eval_policy_manager:
+            opponent_role = "target" if TrainingParameters.AGENT_TO_TRAIN == "tracker" else "tracker"
+            current_eval_policy = eval_policy_manager.sample_policy(opponent_role)
+            eval_policy_manager.reset()
+        
         while not done and ep_len < EnvParameters.EPISODE_LEN:
             agent_pair, _, _, _, _ = agent_model.evaluate(obs, greedy=True)
-            if TrainingParameters.AGENT_TO_TRAIN == "tracker":
-                if TrainingParameters.OPPONENT_TYPE == "policy":
-                    if opponent_model is None:
-                        raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in evaluation")
-                    opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
-                    tracker_action, target_action = agent_pair, opp_pair
-                elif TrainingParameters.OPPONENT_TYPE == "expert":
+            
+            # 获取对手动作
+            if TrainingParameters.OPPONENT_TYPE == "policy":
+                if opponent_model is None:
+                    raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in evaluation")
+                opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
+            elif TrainingParameters.OPPONENT_TYPE == "expert":
+                if TrainingParameters.AGENT_TO_TRAIN == "tracker":
                     opp_pair = get_expert_target_action_pair(obs)
-                    tracker_action, target_action = agent_pair, opp_pair
                 else:
-                    raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
-            else:
-                if TrainingParameters.OPPONENT_TYPE == "policy":
-                    if opponent_model is None:
-                        raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in evaluation")
-                    opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
-                    tracker_action, target_action = opp_pair, agent_pair
-                elif TrainingParameters.OPPONENT_TYPE == "expert":
                     opp_pair = get_expert_tracker_action_pair(obs)
-                    tracker_action, target_action = opp_pair, agent_pair
+            elif TrainingParameters.OPPONENT_TYPE == "random":
+                if eval_policy_manager and current_eval_policy:
+                    opp_pair = eval_policy_manager.get_action(current_eval_policy, obs)
                 else:
-                    raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+                    # 回退到专家策略
+                    if TrainingParameters.AGENT_TO_TRAIN == "tracker":
+                        opp_pair = get_expert_target_action_pair(obs)
+                    else:
+                        opp_pair = get_expert_tracker_action_pair(obs)
+            else:
+                raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+            
+            # 根据训练的agent类型确定tracker和target动作
+            if TrainingParameters.AGENT_TO_TRAIN == "tracker":
+                tracker_action, target_action = agent_pair, opp_pair
+            else:
+                tracker_action, target_action = opp_pair, agent_pair
+                
             obs, reward, terminated, truncated, info = eval_env.step((tracker_action, target_action))
             done = terminated or truncated
             ep_r += float(reward)

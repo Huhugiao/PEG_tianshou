@@ -25,7 +25,27 @@ class TrainingParameters:
 
     # Agent training configuration
     AGENT_TO_TRAIN = "tracker"  # "tracker" or "target"
-    OPPONENT_TYPE = "expert" 
+    OPPONENT_TYPE = "random" 
+
+    # 如果不设置，将使用均匀权重
+    RANDOM_OPPONENT_WEIGHTS = {
+        "tracker": {
+            "expert_tracker": 0.3,
+            "predictive_tracker": 0.2, 
+            "circle_tracker": 0.15,
+            "patrol_tracker": 0.15,
+            "random_tracker": 0.1,
+            "area_denial_tracker": 0.1
+        },
+        "target": {
+            "expert_target": 0.3,
+            "zigzag_target": 0.15,
+            "edge_hugging_target": 0.15,
+            "feinting_target": 0.15,
+            "spiral_target": 0.15,
+            "tracker_aware_target": 0.1
+        }
+    }
         
     # IL configuration
     IL_TYPE = "policy"  # "expert" or "policy"

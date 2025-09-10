@@ -8,6 +8,7 @@ from model import Model
 from util import set_global_seeds, update_perf
 from env import TrackingEnv
 from expert_policies import get_expert_tracker_action_pair, get_expert_target_action_pair
+from policymanager import PolicyManager  # 新增导入
 
 
 @ray.remote(num_cpus=1, num_gpus=SetupParameters.NUM_GPU / max((TrainingParameters.N_ENVS + 1), 1))
@@ -31,6 +32,25 @@ class Runner(object):
             self.opponent_model = Model(self.local_device)
         else:
             self.opponent_model = None
+
+        # Random opponent policy manager (新增)
+        if TrainingParameters.OPPONENT_TYPE == "random":
+            self.policy_manager = PolicyManager()
+            
+            # 设置自定义权重 (如果有的话)
+            if hasattr(TrainingParameters, 'RANDOM_OPPONENT_WEIGHTS'):
+                opponent_role = "target" if self.mission == 0 else "tracker"
+                custom_weights = getattr(TrainingParameters, 'RANDOM_OPPONENT_WEIGHTS', {})
+                if opponent_role in custom_weights:
+                    self.policy_manager.set_policy_weights(opponent_role, custom_weights[opponent_role])
+                    print(f"Runner {env_id}: Set custom weights for {opponent_role}: {custom_weights[opponent_role]}")
+            
+            # 记录当前episode使用的策略
+            self.current_opponent_policy = None
+            self.opponent_role = "target" if self.mission == 0 else "tracker"
+        else:
+            self.policy_manager = None
+            self.current_opponent_policy = None
 
         # IL Teacher Model (仅在policy模式下初始化)
         self.teacher_model = None
@@ -59,6 +79,34 @@ class Runner(object):
         self.agent_hidden = None
         self.opponent_hidden = None
 
+    def _get_opponent_action(self, observation):
+        """
+        获取对手动作的统一接口
+        """
+        if TrainingParameters.OPPONENT_TYPE == "policy":
+            if self.opponent_model is None:
+                raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None")
+            opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(
+                observation, self.opponent_hidden, greedy=True
+            )
+            return opp_pair
+            
+        elif TrainingParameters.OPPONENT_TYPE == "expert":
+            if self.mission == 0:  # train tracker; opponent is target
+                return get_expert_target_action_pair(observation)
+            else:  # train target; opponent is tracker
+                return get_expert_tracker_action_pair(observation)
+                
+        elif TrainingParameters.OPPONENT_TYPE == "random":
+            if self.current_opponent_policy is None:
+                # Episode开始，选择一个新的策略
+                self.current_opponent_policy = self.policy_manager.sample_policy(self.opponent_role)
+            
+            return self.policy_manager.get_action(self.current_opponent_policy, observation)
+            
+        else:
+            raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+
     def run(self, model_weights, opponent_weights, total_steps):
         """Collect RL data for training agent"""
         with torch.no_grad():
@@ -85,30 +133,16 @@ class Runner(object):
             for _ in range(TrainingParameters.N_STEPS):
                 agent_pair, self.agent_hidden, v_pred, prob, agent_index = self.agent_model.step(self.vector, self.agent_hidden)
 
+                # 获取对手动作
+                opp_pair = self._get_opponent_action(self.vector)
+
+                # 根据训练的agent类型确定tracker和target动作
                 if self.mission == 0:
                     # train tracker; opponent is target
-                    if TrainingParameters.OPPONENT_TYPE == "policy":
-                        if self.opponent_model is None:
-                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None")
-                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
-                        tracker_action, target_action = agent_pair, opp_pair
-                    elif TrainingParameters.OPPONENT_TYPE == "expert":
-                        opp_pair = get_expert_target_action_pair(self.vector)
-                        tracker_action, target_action = agent_pair, opp_pair
-                    else:
-                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+                    tracker_action, target_action = agent_pair, opp_pair
                 else:
                     # train target; opponent is tracker
-                    if TrainingParameters.OPPONENT_TYPE == "policy":
-                        if self.opponent_model is None:
-                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None")
-                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
-                        tracker_action, target_action = opp_pair, agent_pair
-                    elif TrainingParameters.OPPONENT_TYPE == "expert":
-                        opp_pair = get_expert_tracker_action_pair(self.vector)
-                        tracker_action, target_action = opp_pair, agent_pair
-                    else:
-                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+                    tracker_action, target_action = opp_pair, agent_pair
 
                 obs, reward, terminated, truncated, info = self.env.step((tracker_action, target_action))
                 done = terminated or truncated
@@ -152,6 +186,12 @@ class Runner(object):
                     self.vector, _ = self.env.reset()
                     self.agent_hidden = None
                     self.opponent_hidden = None
+                    
+                    # 重置随机对手策略 (新episode开始时重新选择)
+                    if TrainingParameters.OPPONENT_TYPE == "random":
+                        self.current_opponent_policy = None
+                        if self.policy_manager:
+                            self.policy_manager.reset()
 
             last_value = self.agent_model.value(self.vector)
             data = self._compute_gae_returns(data, last_value)
@@ -191,34 +231,25 @@ class Runner(object):
                     il_index = Model.pair_to_idx(il_pair[0], il_pair[1])
                     actions.append(np.int64(il_index))
 
-                # 推进环境
+                # 获取对手动作并推进环境
+                opp_pair = self._get_opponent_action(obs)
+                
+                # 根据训练的agent类型确定tracker和target动作
                 if self.mission == 0:
-                    tracker_action = il_pair
-                    if TrainingParameters.OPPONENT_TYPE == "expert":
-                        target_action = get_expert_target_action_pair(obs)
-                    elif TrainingParameters.OPPONENT_TYPE == "policy":
-                        if self.opponent_model is None:
-                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in imitation()")
-                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(obs, self.opponent_hidden, greedy=True)
-                        target_action = opp_pair
-                    else:
-                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+                    tracker_action, target_action = il_pair, opp_pair
                 else:
-                    target_action = il_pair
-                    if TrainingParameters.OPPONENT_TYPE == "expert":
-                        tracker_action = get_expert_tracker_action_pair(obs)
-                    elif TrainingParameters.OPPONENT_TYPE == "policy":
-                        if self.opponent_model is None:
-                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in imitation()")
-                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(obs, self.opponent_hidden, greedy=True)
-                        tracker_action = opp_pair
-                    else:
-                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+                    tracker_action, target_action = opp_pair, il_pair
 
                 obs, _, terminated, truncated, _ = self.imitation_env.step((tracker_action, target_action))
                 if terminated or truncated:
                     obs, _ = self.imitation_env.reset()
                     self.teacher_hidden = None  # 环境重置时也重置hidden state
+                    
+                    # 重置随机对手策略
+                    if TrainingParameters.OPPONENT_TYPE == "random":
+                        self.current_opponent_policy = None
+                        if self.policy_manager:
+                            self.policy_manager.reset()
 
             data = {
                 'vector': np.asarray(vectors, dtype=np.float32),
