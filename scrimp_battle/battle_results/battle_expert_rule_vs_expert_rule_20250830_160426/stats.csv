@@ -1,2 +1,0 @@
-total_episodes,avg_steps,avg_steps_last_100,avg_reward,tracker_win_rate,target_win_rate,draw_rate,tracker_type,target_type,tracker_speed,target_speed,tracker_turn_deg,target_turn_deg,state_space
-200,144.85,147.74,8.028233541941672,0.885,0.115,-1.3877787807814457e-17,expert_rule,expert_rule,4.0,8.0,35.0,35.0,vector

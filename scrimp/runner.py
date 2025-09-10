@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import ray
+import os
 
 from alg_parameters import *
 from model import Model
@@ -30,6 +31,27 @@ class Runner(object):
             self.opponent_model = Model(self.local_device)
         else:
             self.opponent_model = None
+
+        # IL Teacher Model (仅在policy模式下初始化)
+        self.teacher_model = None
+        self.teacher_hidden = None
+        if hasattr(TrainingParameters, 'IL_TYPE') and TrainingParameters.IL_TYPE == "policy":
+            self.teacher_model = Model(self.local_device)
+            # 加载教师模型
+            try:
+                if self.mission == 0:  # train tracker
+                    teacher_path = getattr(TrainingParameters, 'IL_TEACHER_TRACKER_PATH', None)
+                else:  # train target
+                    teacher_path = getattr(TrainingParameters, 'IL_TEACHER_TARGET_PATH', None)
+                
+                if teacher_path and os.path.exists(teacher_path):
+                    teacher_dict = torch.load(teacher_path, map_location=self.local_device)
+                    self.teacher_model.network.load_state_dict(teacher_dict['model'])
+                    print(f"Runner {env_id}: Loaded IL teacher model from {teacher_path}")
+                else:
+                    print(f"Runner {env_id}: Warning - IL teacher model not found at {teacher_path}")
+            except Exception as e:
+                print(f"Runner {env_id}: Error loading IL teacher model: {e}")
 
         # Reset
         self.vector, _ = self.env.reset()
@@ -64,17 +86,29 @@ class Runner(object):
                 agent_pair, self.agent_hidden, v_pred, prob, agent_index = self.agent_model.step(self.vector, self.agent_hidden)
 
                 if self.mission == 0:
-                    if self.opponent_model is not None:
+                    # train tracker; opponent is target
+                    if TrainingParameters.OPPONENT_TYPE == "policy":
+                        if self.opponent_model is None:
+                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None")
                         opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
                         tracker_action, target_action = agent_pair, opp_pair
+                    elif TrainingParameters.OPPONENT_TYPE == "expert":
+                        opp_pair = get_expert_target_action_pair(self.vector)
+                        tracker_action, target_action = agent_pair, opp_pair
                     else:
-                        tracker_action, target_action = agent_pair, -1
+                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
                 else:
-                    if self.opponent_model is not None:
+                    # train target; opponent is tracker
+                    if TrainingParameters.OPPONENT_TYPE == "policy":
+                        if self.opponent_model is None:
+                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None")
                         opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(self.vector, self.opponent_hidden, greedy=True)
                         tracker_action, target_action = opp_pair, agent_pair
+                    elif TrainingParameters.OPPONENT_TYPE == "expert":
+                        opp_pair = get_expert_tracker_action_pair(self.vector)
+                        tracker_action, target_action = opp_pair, agent_pair
                     else:
-                        tracker_action, target_action = -1, agent_pair
+                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
 
                 obs, reward, terminated, truncated, info = self.env.step((tracker_action, target_action))
                 done = terminated or truncated
@@ -124,31 +158,67 @@ class Runner(object):
             return data, steps_collected, episodes, performance_dict, self.vector
 
     def imitation(self, model_weights, opponent_weights, total_steps):
-        """Collect imitation data (expert labels) for the training agent"""
+        """Collect imitation data for the training agent"""
         with torch.no_grad():
             self.agent_model.set_weights(model_weights)
             if opponent_weights is not None and self.opponent_model is not None:
                 self.opponent_model.set_weights(opponent_weights)
 
             obs, _ = self.imitation_env.reset()
+            self.teacher_hidden = None  # 重置教师模型的hidden state
             vectors = []
             actions = []
+            
+            # 检查IL类型
+            il_type = getattr(TrainingParameters, 'IL_TYPE', 'expert')
+            
             for _ in range(TrainingParameters.N_STEPS):
                 vectors.append(obs.astype(np.float32))
-                if self.mission == 0:
-                    expert_pair = get_expert_tracker_action_pair(obs)
+                
+                # 根据IL类型选择获取动作的方式
+                if il_type == "policy" and self.teacher_model is not None:
+                    # 使用策略教师
+                    il_pair, self.teacher_hidden, _, _, il_index = self.teacher_model.evaluate(
+                        obs, self.teacher_hidden, greedy=True
+                    )
+                    actions.append(np.int64(il_index))
                 else:
-                    expert_pair = get_expert_target_action_pair(obs)
-                expert_index = Model.pair_to_idx(expert_pair[0], expert_pair[1])  # 量化为标签
-                actions.append(np.int64(expert_index))
+                    # 使用专家规则 (默认)
+                    if self.mission == 0:
+                        il_pair = get_expert_tracker_action_pair(obs)
+                    else:
+                        il_pair = get_expert_target_action_pair(obs)
+                    il_index = Model.pair_to_idx(il_pair[0], il_pair[1])
+                    actions.append(np.int64(il_index))
 
+                # 推进环境
                 if self.mission == 0:
-                    tracker_action, target_action = expert_pair, -1
+                    tracker_action = il_pair
+                    if TrainingParameters.OPPONENT_TYPE == "expert":
+                        target_action = get_expert_target_action_pair(obs)
+                    elif TrainingParameters.OPPONENT_TYPE == "policy":
+                        if self.opponent_model is None:
+                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in imitation()")
+                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(obs, self.opponent_hidden, greedy=True)
+                        target_action = opp_pair
+                    else:
+                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
                 else:
-                    tracker_action, target_action = -1, expert_pair
+                    target_action = il_pair
+                    if TrainingParameters.OPPONENT_TYPE == "expert":
+                        tracker_action = get_expert_tracker_action_pair(obs)
+                    elif TrainingParameters.OPPONENT_TYPE == "policy":
+                        if self.opponent_model is None:
+                            raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in imitation()")
+                        opp_pair, self.opponent_hidden, _, _, _ = self.opponent_model.evaluate(obs, self.opponent_hidden, greedy=True)
+                        tracker_action = opp_pair
+                    else:
+                        raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
+
                 obs, _, terminated, truncated, _ = self.imitation_env.step((tracker_action, target_action))
                 if terminated or truncated:
                     obs, _ = self.imitation_env.reset()
+                    self.teacher_hidden = None  # 环境重置时也重置hidden state
 
             data = {
                 'vector': np.asarray(vectors, dtype=np.float32),

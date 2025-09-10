@@ -22,21 +22,17 @@ def reward_calculate(tracker, target, base, mission=0):
     capture_radius = getattr(map_config, 'capture_radius', map_config.pixel_size)
     base_radius = getattr(map_config, 'base_radius', map_config.pixel_size)
 
-    max_d = float(np.hypot(map_config.width, map_config.height))
-    norm_t = dist_tt / max_d
-    norm_b = dist_tb / max_d
-
     if dist_tb <= base_radius:
-        reward = -getattr(map_config, 'success_reward', 1.0)
+        reward = -20
         terminated = True
         info['reason'] = 'target_reached_base'
     elif dist_tt <= capture_radius:
-        reward = getattr(map_config, 'success_reward', 1.0)
+        reward = 20
         truncated = True
         info['reason'] = 'tracker_caught_target'
     else:
-        reward = 0.8 * (1.0 - norm_t) - 1.0 * (1.0 - norm_b)
-        reward -= 0.01
+        # reward = 0.8 * (1.0 - norm_t) - 1.0 * (1.0 - norm_b)
+        reward -= 0.02
 
     if mission == 1:
         reward = -reward

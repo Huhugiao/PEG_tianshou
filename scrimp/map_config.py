@@ -6,13 +6,12 @@ height = 600
 
 # 基础单位与速度（浮点）
 pixel_size = 4
-target_speed = 8
-tracker_speed = 4
+target_speed = 2
+tracker_speed = 1.5
 
-# 角速度上限（新增：放在全局配置中，由 env_lib.agent_move 读取）
-max_turn_deg = 45.0                 # 通用兜底
-tracker_max_turn_deg = 35.0         # 追踪者每步最大转角（度）
-target_max_turn_deg = 35        # 目标每步最大转角（度）
+max_turn_deg = 10.0                 # 通用兜底
+tracker_max_turn_deg = 10.0         # 追踪者每步最大转角（度）
+target_max_turn_deg = 10.0          # 目标每步最大转角（度）
 
 # 判定半径
 capture_radius = 10
@@ -50,14 +49,7 @@ draw_grid = False if FAST else True
 # 训练相关
 test_flag = False
 mask_flag = False
-collision_penalty = -20
-loss_penalty = -20
 success_reward = 20
-
-max_detection_distance = 300
-best_distance = 20
-max_detection_angle = 90
-best_angle = 0
 
 max_loss_step = 50
 total_steps = 500

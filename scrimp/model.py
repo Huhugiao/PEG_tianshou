@@ -6,6 +6,7 @@ from torch.cuda.amp.grad_scaler import GradScaler
 
 from alg_parameters import *
 from nets import ProtectingNet
+import map_config
 
 
 class Model(object):
@@ -16,22 +17,37 @@ class Model(object):
     SPEED_FACTORS = np.array([0.0, 0.5, 1.0], dtype=np.float32)     # 3个速度档
 
     @staticmethod
+    def _angle_limit():
+        try:
+            return float(getattr(map_config, 'max_turn_deg', 10.0))
+        except Exception:
+            return 10.0
+
+    @staticmethod
+    def _angle_bins():
+        lim = Model._angle_limit()
+        return np.linspace(-lim, lim, 16, dtype=np.float32)
+
+    @staticmethod
     def idx_to_pair(action_idx: int):
+        bins = Model._angle_bins()
         aidx = int(action_idx) // 3
         sidx = int(action_idx) % 3
-        angle = float(Model.ANGLE_OFFSETS[int(np.clip(aidx, 0, 15))])
-        speed_factor = float(Model.SPEED_FACTORS[int(np.clip(sidx, 0, 2))])
+        aidx = int(np.clip(aidx, 0, len(bins) - 1))
+        sidx = int(np.clip(sidx, 0, len(Model.SPEED_FACTORS) - 1))
+        angle = float(bins[aidx])
+        speed_factor = float(Model.SPEED_FACTORS[sidx])
         return (angle, speed_factor)
 
     @staticmethod
     def pair_to_idx(angle_delta_deg: float, speed_factor: float):
-        # 裁切
-        angle = float(np.clip(angle_delta_deg, -45.0, 45.0))
-        sf = float(np.clip(speed_factor, 0.0, 1.0))
-        # 角度bin（-45~45，共16个，约6度一档）
-        direction_step = 90.0 / 15.0  # 6度
-        dir_idx = int(np.clip(int(round(angle / direction_step)) + 8, 0, 15))
+        bins = Model._angle_bins()
+        # 裁切到全局角度上限
+        angle = float(np.clip(angle_delta_deg, bins[0], bins[-1]))
+        # 就近映射到角度bin
+        dir_idx = int(np.argmin(np.abs(bins - angle)))
         # 速度bin就近映射到[0, 0.5, 1.0]
+        sf = float(np.clip(speed_factor, 0.0, 1.0))
         sidx = int(np.argmin(np.abs(Model.SPEED_FACTORS - sf)))
         return int(dir_idx * 3 + sidx)
 

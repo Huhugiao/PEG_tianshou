@@ -17,6 +17,7 @@ from env import TrackingEnv
 from model import Model
 from runner import Runner
 from util import set_global_seeds, write_to_tensorboard, write_to_wandb, make_gif
+from expert_policies import get_expert_tracker_action_pair, get_expert_target_action_pair
 
 try:
     import wandb
@@ -24,8 +25,8 @@ except Exception:
     wandb = None
 
 # IL cosine annealing
-IL_INITIAL_PROB = 0.0
-IL_FINAL_PROB = 0.0
+IL_INITIAL_PROB = 1.0
+IL_FINAL_PROB = 1.0
 IL_DECAY_STEPS = int(TrainingParameters.N_MAX_STEPS * 0.5)
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
@@ -33,6 +34,7 @@ if not ray.is_initialized():
     ray.init(num_gpus=SetupParameters.NUM_GPU)
 print("Welcome to SCRIMP on Protecting Environment!\n")
 print(f"Training agent: {TrainingParameters.AGENT_TO_TRAIN} with {TrainingParameters.OPPONENT_TYPE} opponent")
+print(f"IL type: {getattr(TrainingParameters, 'IL_TYPE', 'expert')}")
 print(f"IL probability will cosine anneal from {IL_INITIAL_PROB*100:.1f}% to {IL_FINAL_PROB*100:.1f}% over {IL_DECAY_STEPS} steps")
 
 # Defaults for missing RecordingParameters fields
@@ -56,6 +58,7 @@ all_args = {
     'n_actions': EnvParameters.N_ACTIONS,
     'agent_to_train': TrainingParameters.AGENT_TO_TRAIN,
     'opponent_type': TrainingParameters.OPPONENT_TYPE,
+    'il_type': getattr(TrainingParameters, 'IL_TYPE', 'expert'),  # 添加这一行
     'il_initial_prob': IL_INITIAL_PROB,
     'il_final_prob': IL_FINAL_PROB,
     'il_decay_steps': IL_DECAY_STEPS
@@ -152,7 +155,9 @@ def main():
 
             weights = training_model.get_weights()
             jobs = []
+            
             if do_il:
+                # IL训练分支
                 for e in envs:
                     jobs.append(e.imitation.remote(weights, opponent_weights, curr_steps))
                 il_batches = ray.get(jobs)
@@ -168,11 +173,16 @@ def main():
                     end = min(start + TrainingParameters.MINIBATCH_SIZE, len(vec))
                     mb_loss.append(training_model.imitation_train(vec[start:end], lbl[start:end]))
 
+                # 创建一个虚拟的性能字典用于IL训练记录
+                avg_perf = {'per_r': 0.0, 'per_ex_r': 0.0, 'per_in_r': 0.0, 'per_valid_rate': 1.0,
+                        'per_episode_len': 0.0, 'rewarded_rate': 0.0}
+                
                 write_to_tensorboard(global_summary, curr_steps, imitation_loss=np.nanmean(mb_loss, axis=0), evaluate=False)
                 if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
                     write_to_wandb(curr_steps, performance_dict=avg_perf, mb_loss=mb_loss, evaluate=False)
 
                 curr_steps += int(TrainingParameters.N_ENVS * TrainingParameters.N_STEPS)
+                
             else:
                 # RL rollout
                 jobs = [e.run.remote(weights, opponent_weights, curr_steps) for e in envs]
@@ -188,7 +198,7 @@ def main():
 
                 # Aggregate performance
                 performance_dict = {'per_r': [], 'per_ex_r': [], 'per_in_r': [], 'per_valid_rate': [],
-                                    'per_episode_len': [], 'rewarded_rate': []}
+                                'per_episode_len': [], 'rewarded_rate': []}
                 for r in results:
                     perf = r[3]
                     for k, v in perf.items():
@@ -214,19 +224,21 @@ def main():
                 curr_steps += steps_batch
                 curr_episodes += episodes_batch
 
-                # Save latest
-                if curr_steps - last_model_t >= SAVE_INTERVAL:
-                    last_model_t = curr_steps
-                    model_path = osp.join(MODEL_PATH, 'latest')
-                    os.makedirs(model_path, exist_ok=True)
-                    save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
-                    checkpoint = {"model": training_model.network.state_dict(),
-                                  "optimizer": training_model.net_optimizer.state_dict(),
-                                  "step": curr_steps, "episode": curr_episodes, "reward": avg_perf['per_r']}
-                    torch.save(checkpoint, save_path)
-                    print(f"Saved latest model at step {curr_steps}")
+            # 将评估、保存模型等逻辑移到这里，让IL和RL都能触发
+            # Save latest
+            if curr_steps - last_model_t >= SAVE_INTERVAL:
+                last_model_t = curr_steps
+                model_path = osp.join(MODEL_PATH, 'latest')
+                os.makedirs(model_path, exist_ok=True)
+                save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
+                checkpoint = {"model": training_model.network.state_dict(),
+                            "optimizer": training_model.net_optimizer.state_dict(),
+                            "step": curr_steps, "episode": curr_episodes, "reward": avg_perf['per_r']}
+                torch.save(checkpoint, save_path)
+                print(f"Saved latest model at step {curr_steps}")
 
-                # Save best
+            # Save best (只在有实际性能数据时更新，即RL模式下)
+            if not do_il:  # 只在RL模式下更新best performance
                 mean_r = avg_perf['per_r']
                 if mean_r > best_perf and (curr_steps - last_best_t >= BEST_INTERVAL):
                     best_perf = mean_r
@@ -235,19 +247,20 @@ def main():
                     os.makedirs(model_path, exist_ok=True)
                     save_path = model_path + f"/{TrainingParameters.AGENT_TO_TRAIN}_net_checkpoint.pkl"
                     checkpoint = {"model": training_model.network.state_dict(),
-                                  "optimizer": training_model.net_optimizer.state_dict(),
-                                  "step": curr_steps, "episode": curr_episodes, "reward": best_perf}
+                                "optimizer": training_model.net_optimizer.state_dict(),
+                                "step": curr_steps, "episode": curr_episodes, "reward": best_perf}
                     torch.save(checkpoint, save_path)
                     print(f"New best model saved with reward {best_perf:.4f}")
 
-            # Evaluate
+            # Evaluate (现在IL和RL都会评估)
             if curr_steps - last_test_t >= EVAL_INTERVAL:
                 last_test_t = curr_steps
                 eval_perf = evaluate_single_agent(eval_env, training_model, opponent_model, global_device,
-                                                  save_gif=(curr_steps - last_gif_t >= GIF_INTERVAL),
-                                                  curr_steps=curr_steps)
+                                                save_gif=(curr_steps - last_gif_t >= GIF_INTERVAL),
+                                                curr_steps=curr_steps)
                 write_to_tensorboard(global_summary, curr_steps, performance_dict=eval_perf, evaluate=True)
-                write_to_wandb(curr_steps, performance_dict=eval_perf, evaluate=True)
+                if getattr(RecordingParameters, 'WANDB', False) and (wandb is not None) and (getattr(wandb, 'run', None) is not None):
+                    write_to_wandb(curr_steps, performance_dict=eval_perf, evaluate=True)
                 if curr_steps - last_gif_t >= GIF_INTERVAL:
                     last_gif_t = curr_steps
 
@@ -281,18 +294,27 @@ def evaluate_single_agent(eval_env, agent_model, opponent_model, device, save_gi
         while not done and ep_len < EnvParameters.EPISODE_LEN:
             agent_pair, _, _, _, _ = agent_model.evaluate(obs, greedy=True)
             if TrainingParameters.AGENT_TO_TRAIN == "tracker":
-                if opponent_model is not None:
+                if TrainingParameters.OPPONENT_TYPE == "policy":
+                    if opponent_model is None:
+                        raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in evaluation")
                     opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
                     tracker_action, target_action = agent_pair, opp_pair
+                elif TrainingParameters.OPPONENT_TYPE == "expert":
+                    opp_pair = get_expert_target_action_pair(obs)
+                    tracker_action, target_action = agent_pair, opp_pair
                 else:
-                    tracker_action, target_action = agent_pair, -1
+                    raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
             else:
-                if opponent_model is not None:
+                if TrainingParameters.OPPONENT_TYPE == "policy":
+                    if opponent_model is None:
+                        raise RuntimeError("OPPONENT_TYPE=policy but opponent_model is None in evaluation")
                     opp_pair, _, _, _, _ = opponent_model.evaluate(obs, greedy=True)
                     tracker_action, target_action = opp_pair, agent_pair
+                elif TrainingParameters.OPPONENT_TYPE == "expert":
+                    opp_pair = get_expert_tracker_action_pair(obs)
+                    tracker_action, target_action = opp_pair, agent_pair
                 else:
-                    tracker_action, target_action = -1, agent_pair
-
+                    raise ValueError(f"Unsupported OPPONENT_TYPE: {TrainingParameters.OPPONENT_TYPE}")
             obs, reward, terminated, truncated, info = eval_env.step((tracker_action, target_action))
             done = terminated or truncated
             ep_r += float(reward)

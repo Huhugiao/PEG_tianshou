@@ -38,28 +38,35 @@ class BattleConfig:
 
         os.makedirs(output_dir, exist_ok=True)
 
-        # mission推断
-        if tracker_type == "rule" and target_type == "rule":
-            self.mission = -1
-        elif "expert_rule" in {tracker_type, target_type}:
-            self.mission = 3
-        elif tracker_type == "policy" and target_type == "rule":
-            self.mission = 2
-        elif tracker_type == "rule" and target_type == "policy":
-            self.mission = 1
-        else:
-            self.mission = 2
+        # 简化 mission 配置：统一使用 0（与 driver.py 保持一致）
+        # mission=0: 不翻转奖励，适用于评估场景
+        self.mission = 0
 
-        # 运行目录（run_battle 中创建）
         self.run_dir = None
         self.run_timestamp = None
 
+    def _continuous_to_discrete(self, angle_deg, speed_factor):
+        """
+        (保留但不再用于 env 交互)
+        旧逻辑: 将连续动作粗糙量化为 (angle_idx, speed_idx)。
+        已弃用：env.step 期望物理量 (angle_delta_deg, speed_factor)，
+        且 PPO 训练使用 16x3 的自定义离散映射（见 Model.idx_to_pair / pair_to_idx）。
+        如需统计或回放离散索引，应改用 Model.pair_to_idx。
+        """
+        angle_clamped = np.clip(angle_deg, -10.0, 10.0)
+        angle_action = int(np.clip(np.round(angle_clamped / 10.0) + 10, 0, 20))
+        speed_action = int(np.clip(np.round(speed_factor / 0.25) - 1, 0, 3))
+        return angle_action, speed_action
 
-def run_battle_episode(config, episode_idx):
-    """运行单个对战回合（速度与角速度均由 map_config 提供）"""
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    env = TrackingEnv(mission=config.mission)
+
+def run_battle_batch(args):
+    """运行一批episode（减少模型重复加载）"""
+    config, episode_indices = args
     
+    # 设备选择
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # 一次性加载模型，批次内复用
     tracker_model = None
     target_model = None
     
@@ -67,207 +74,243 @@ def run_battle_episode(config, episode_idx):
         tracker_model = Model(device, global_model=False)
         model_dict = torch.load(config.tracker_model_path, map_location=device)
         tracker_model.network.load_state_dict(model_dict['model'])
+        tracker_model.network.eval()
     
     if config.target_type == "policy":
         target_model = Model(device, global_model=False)
         model_dict = torch.load(config.target_model_path, map_location=device)
         target_model.network.load_state_dict(model_dict['model'])
+        target_model.network.eval()
     
-    obs, _ = env.reset()
-    done = False
-    episode_step = 0
-    episode_reward = 0.0
-    tracker_caught_target = False
-    target_reached_base = False
+    batch_results = []
     
-    save_gif = (config.save_gif_freq > 0 and episode_idx % config.save_gif_freq == 0)
-    episode_frames = [] if save_gif else None
-    
-    tracker_hidden = None
-    target_hidden = None
-    
-    if save_gif:
+    for episode_idx in episode_indices:
         try:
-            frame = env.render(mode='rgb_array')
-            if frame is not None:
-                episode_frames.append(frame)
-        except Exception as e:
-            print(f"Error capturing initial frame: {e}")
+            result = run_single_episode(config, episode_idx, tracker_model, target_model, device)
+            batch_results.append(result)
+        except Exception:
+            batch_results.append({
+                "episode_id": episode_idx,
+                "steps": 0,
+                "reward": 0.0,
+                "tracker_caught_target": False,
+                "target_reached_base": False,
+                "tracker_type": config.tracker_type,
+                "target_type": config.target_type
+            })
     
-    while not done and episode_step < EnvParameters.EPISODE_LEN:
-        # tracker
-        if config.tracker_type == "policy":
-            tracker_action, tracker_hidden, _, _, _ = tracker_model.evaluate(obs, tracker_hidden, greedy=True)
-        elif config.tracker_type == "expert_rule":
-            tracker_action = get_expert_tracker_action_pair(obs)
-        else:
-            tracker_action = -1  # env 内置 rule
+    return batch_results
+
+
+def run_single_episode(config, episode_idx, tracker_model, target_model, device):
+    """运行单个episode"""
+    env = TrackingEnv(mission=config.mission)
+    
+    try:
+        obs, _ = env.reset()
+        done = False
+        episode_step = 0
+        episode_reward = 0.0
+        tracker_caught_target = False
+        target_reached_base = False
         
-        # target
-        if config.target_type == "policy":
-            target_action, target_hidden, _, _, _ = target_model.evaluate(obs, target_hidden, greedy=True)
-        elif config.target_type == "expert_rule":
-            target_action = get_expert_target_action_pair(obs)
-        else:
-            target_action = -1
+        save_gif = (config.save_gif_freq > 0 and episode_idx % config.save_gif_freq == 0)
+        episode_frames = []
         
-        try:
-            obs, reward, terminated, truncated, info = env.step(tracker_action, target_action)
-            done = terminated or truncated
-            episode_reward += float(reward)
-            if terminated:
-                target_reached_base = True
-            if truncated:
-                tracker_caught_target = True
-        except Exception as e:
-            print(f"Error in step: {e}")
-            break
-        
-        episode_step += 1
+        tracker_hidden = None
+        target_hidden = None
         
         if save_gif:
             try:
                 frame = env.render(mode='rgb_array')
                 if frame is not None:
                     episode_frames.append(frame)
-            except Exception as e:
-                print(f"Error capturing frame: {e}")
+            except Exception:
+                save_gif = False
+        
+        with torch.no_grad():
+            while not done and episode_step < EnvParameters.EPISODE_LEN:
+                # Tracker 动作
+                if config.tracker_type == "policy":
+                    # 期望 Model.evaluate 返回: ( (angle, speed_factor), hidden, value, prob, action_idx )
+                    tracker_eval = tracker_model.evaluate(obs, tracker_hidden, greedy=True)
+                    # 兼容不同实现（如果用户稍后补全 model.evaluate）
+                    if isinstance(tracker_eval, tuple) and len(tracker_eval) >= 1:
+                        tracker_action = tracker_eval[0]
+                        if len(tracker_eval) > 1:
+                            tracker_hidden = tracker_eval[1]
+                    else:
+                        # 回退：如果模型还未实现，使用静态零动作
+                        tracker_action = (0.0, 1.0)
+                elif config.tracker_type == "expert_rule":
+                    tracker_action = get_expert_tracker_action_pair(obs)  # 直接返回 (angle_delta_deg, speed_factor)
+                else:
+                    tracker_action = -1  # rule
+                
+                # Target 动作
+                if config.target_type == "policy":
+                    target_eval = target_model.evaluate(obs, target_hidden, greedy=True)
+                    if isinstance(target_eval, tuple) and len(target_eval) >= 1:
+                        target_action = target_eval[0]
+                        if len(target_eval) > 1:
+                            target_hidden = target_eval[1]
+                    else:
+                        target_action = (0.0, 1.0)
+                elif config.target_type == "expert_rule":
+                    target_action = get_expert_target_action_pair(obs)
+                else:
+                    target_action = -1
+
+                # 与环境交互：直接传物理动作/ -1
+                obs, reward, terminated, truncated, info = env.step(tracker_action, target_action)
+                done = terminated or truncated
+                episode_reward += float(reward)
+
+                # 依据环境约定更新胜负标志
+                reason = info.get("reason", "")
+                if reason == "target_reached_base":
+                    target_reached_base = True
+                elif reason == "tracker_caught_target":
+                    tracker_caught_target = True
+
+                episode_step += 1
+
+                if save_gif and episode_step % 2 == 0 and len(episode_frames) < 500:
+                    try:
+                        frame = env.render(mode='rgb_array')
+                        if frame is not None:
+                            episode_frames.append(frame)
+                    except Exception:
+                        save_gif = False
+        
+        if save_gif and len(episode_frames) > 1:
+            try:
+                if tracker_caught_target:
+                    winner = "Tracker"
+                elif target_reached_base:
+                    winner = "Target"
+                else:
+                    winner = "Draw"
+                ep_name = f"ep_{episode_idx:04d}_winner_{winner}.gif"
+                gif_path = os.path.join(config.run_dir, ep_name)
+                make_gif(episode_frames, gif_path)
+            except Exception:
+                pass
+        
+        return {
+            "episode_id": episode_idx,
+            "steps": episode_step,
+            "reward": episode_reward,
+            "tracker_caught_target": tracker_caught_target,
+            "target_reached_base": target_reached_base,
+            "tracker_type": config.tracker_type,
+            "target_type": config.target_type
+        }
     
-    if save_gif and episode_frames:
-        try:
-            ep_name = f"ep_{episode_idx:04d}.gif"
-            gif_path = os.path.join(config.run_dir, ep_name)
-            make_gif(episode_frames, gif_path)
-        except Exception as e:
-            print(f"Error saving GIF: {e}")
-    
-    env.close()
-    
-    result = {
-        "episode_id": episode_idx,
-        "steps": episode_step,
-        "reward": episode_reward,
-        "tracker_caught_target": tracker_caught_target,
-        "target_reached_base": target_reached_base,
-        "tracker_type": config.tracker_type,
-        "target_type": config.target_type
-    }
-    return result
+    finally:
+        env.close()
 
 
 def run_battle(config):
     """运行完整的对战测试"""
-    print(f"开始对战评估: {config.tracker_type} tracker vs {config.target_type} target")
-    print(f"总回合数: {config.episodes}, 每{config.save_gif_freq}回合保存一次GIF")
+    print(f"Running battle: {config.tracker_type} vs {config.target_type}, {config.episodes} episodes")
 
-    # 每次评估单独目录
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"battle_{config.tracker_type}_vs_{config.target_type}_{timestamp}"
     config.run_timestamp = timestamp
     config.run_dir = os.path.join(config.output_dir, run_name)
     os.makedirs(config.run_dir, exist_ok=True)
-    print(f"结果目录: {config.run_dir}")
     
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     
-    num_processes = min(cpu_count(), 8)
-    print(f"使用{num_processes}个并行进程运行")
+    num_processes = min(cpu_count() // 2, 6)
+    batch_size = max(10, config.episodes // max(num_processes, 1))
     
     start_time = time.time()
-    args = [(config, i) for i in range(config.episodes)]
+    results = []
     
-    with Pool(processes=num_processes) as pool:
-        results = pool.starmap(run_battle_episode, args)
+    batches = []
+    for batch_start in range(0, config.episodes, batch_size):
+        batch_end = min(batch_start + batch_size, config.episodes)
+        batch_episodes = list(range(batch_start, batch_end))
+        batches.append((config, batch_episodes))
+    
+    try:
+        with Pool(processes=num_processes) as pool:
+            batch_results = pool.map(run_battle_batch, batches)
+        for batch in batch_results:
+            results.extend(batch)
+    except Exception as e:
+        print(f"Error in parallel execution: {e}")
+        return None, None
+    
+    if not results:
+        print("No successful episodes completed!")
+        return None, None
     
     df = pd.DataFrame(results)
 
-    # 统计
     avg_steps = float(df["steps"].mean()) if len(df) > 0 else 0.0
+    avg_reward = float(df["reward"].mean()) if len(df) > 0 else 0.0
+    tracker_win_rate = float(df['tracker_caught_target'].mean()) if len(df) > 0 else 0.0
+    target_win_rate = float(df['target_reached_base'].mean()) if len(df) > 0 else 0.0
     last100 = df.tail(100)
     avg_steps_100 = float(last100["steps"].mean()) if len(last100) > 0 else 0.0
 
-    # 从 map_config 读取速度/角速度（evaluate 不再设置）
-    tracker_speed = float(getattr(map_config, "tracker_speed", 4.8))
-    target_speed = float(getattr(map_config, "target_speed", 8.0))
+    tracker_speed = float(getattr(map_config, "tracker_speed", 4))
+    target_speed = float(getattr(map_config, "target_speed", 6.0))
     tracker_turn_deg = float(getattr(map_config, "tracker_max_turn_deg", getattr(map_config, "max_turn_deg", 45.0)))
     target_turn_deg = float(getattr(map_config, "target_max_turn_deg", getattr(map_config, "max_turn_deg", 45.0)))
     
-    stats = {
-        "total_episodes": int(len(df)),
-        "avg_steps": avg_steps,
-        "avg_steps_last_100": avg_steps_100,
-        "avg_reward": float(df["reward"].mean()) if len(df) > 0 else 0.0,
-        "tracker_win_rate": float(df["tracker_caught_target"].mean()) if len(df) > 0 else 0.0,
-        "target_win_rate": float(df["target_reached_base"].mean()) if len(df) > 0 else 0.0,
-        "draw_rate": (1.0 - float(df["tracker_caught_target"].mean()) - float(df["target_reached_base"].mean())) if len(df) > 0 else 0.0,
-        "tracker_type": config.tracker_type,
-        "target_type": config.target_type,
-        "tracker_speed": tracker_speed,
-        "target_speed": target_speed,
-        "tracker_turn_deg": tracker_turn_deg,
-        "target_turn_deg": target_turn_deg,
-        "state_space": config.state_space
-    }
+    try:
+        results_path = os.path.join(config.run_dir, "results.csv")
+        df.to_csv(results_path, index=False)
+        
+        stats = {
+            "total_episodes": len(df),
+            "avg_steps": avg_steps,
+            "avg_steps_last_100": avg_steps_100,
+            "avg_reward": avg_reward,
+            "tracker_win_rate": tracker_win_rate,
+            "target_win_rate": target_win_rate,
+            "draw_rate": 1.0 - tracker_win_rate - target_win_rate,
+            "tracker_type": config.tracker_type,
+            "target_type": config.target_type,
+            "tracker_speed": tracker_speed,
+            "target_speed": target_speed,
+            "tracker_turn_deg": tracker_turn_deg,
+            "target_turn_deg": target_turn_deg,
+            "state_space": config.state_space
+        }
+        stats_path = os.path.join(config.run_dir, "stats.csv")
+        pd.DataFrame([stats]).to_csv(stats_path, index=False)
+    except Exception as e:
+        print(f"Warning: Failed to save results: {e}")
     
-    # CSV：主数据 + 末尾附 summary 与 params 两行
-    results_path = os.path.join(config.run_dir, "results.csv")
-    df.to_csv(results_path, index=False)
-    summary_row = {
-        "episode_id": "summary",
-        "steps": avg_steps,
-        "reward": float(df["reward"].mean()) if len(df) > 0 else 0.0,
-        "tracker_caught_target": float(df["tracker_caught_target"].mean()) if len(df) > 0 else 0.0,
-        "target_reached_base": float(df["target_reached_base"].mean()) if len(df) > 0 else 0.0,
-        "tracker_type": config.tracker_type,
-        "target_type": config.target_type,
-        "avg_steps_100": avg_steps_100
-    }
-    params_row = {
-        "episode_id": "params",
-        "tracker_speed": tracker_speed,
-        "target_speed": target_speed,
-        "tracker_turn_deg": tracker_turn_deg,
-        "target_turn_deg": target_turn_deg,
-        "state_space": config.state_space
-    }
-    pd.DataFrame([summary_row, params_row]).to_csv(results_path, mode="a", header=False, index=False)
-     
-    stats_path = os.path.join(config.run_dir, "stats.csv")
-    pd.DataFrame([stats]).to_csv(stats_path, index=False)
+    total_time = time.time() - start_time
+    print(f"\nBattle Results:")
+    print(f"Episodes: {len(df)}")
+    print(f"Avg steps: {avg_steps:.2f}")
+    print(f"Tracker win rate: {tracker_win_rate*100:.2f}%")
+    print(f"Target win rate: {target_win_rate*100:.2f}%")
+    print(f"Time: {total_time:.2f}s")
+    print(f"Saved to: {config.run_dir}")
     
-    print("\n对战评估结果:")
-    print(f"{'Tracker类型':<20}: {config.tracker_type}")
-    print(f"{'Target类型':<20}: {config.target_type}")
-    print(f"{'总回合数':<20}: {stats['total_episodes']}")
-    print(f"{'平均步数':<20}: {stats['avg_steps']:.2f}")
-    print(f"{'最近100局平均步数':<20}: {stats['avg_steps_last_100']:.2f}")
-    print(f"{'平均奖励':<20}: {stats['avg_reward']:.2f}")
-    print(f"{'Tracker胜率':<20}: {stats['tracker_win_rate']*100:.2f}%")
-    print(f"{'Target胜率':<20}: {stats['target_win_rate']*100:.2f}%")
-    print(f"{'平局率':<20}: {stats['draw_rate']*100:.2f}%")
-    print(f"{'Tracker线/角速度':<20}: {tracker_speed} / {tracker_turn_deg} deg")
-    print(f"{'Target线/角速度':<20}: {target_speed} / {target_turn_deg} deg")
-    print(f"{'状态空间':<20}: {config.state_space}")
-    print(f"已保存到: {config.run_dir}（包含 GIF 与 CSV）")
-    
-    print(f"\n评估完成，用时: {time.time() - start_time:.2f}秒")
-    return stats, df
+    return df, config.run_dir
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Agent Battle Evaluation')
-    parser.add_argument('--tracker', type=str, default='expert_rule', choices=['rule', 'expert_rule', 'policy'])
+    parser.add_argument('--tracker', type=str, default='policy', choices=['rule', 'expert_rule', 'policy'])
     parser.add_argument('--target', type=str, default='expert_rule', choices=['rule', 'expert_rule', 'policy'])
-    parser.add_argument('--tracker_model', type=str, default=None)
+    parser.add_argument('--tracker_model', type=str, default='./models/TrackingEnv/DualAgent10-09-251052/best_model/tracker_net_checkpoint.pkl')
     parser.add_argument('--target_model', type=str, default=None)
     parser.add_argument('--episodes', type=int, default=200)
     parser.add_argument('--save_gif_freq', type=int, default=20)
     parser.add_argument('--output_dir', type=str, default='./scrimp_battle/battle_results')
     parser.add_argument('--seed', type=int, default=1234)
-    # 仅记录标签（速度与角速度请在 map_config 中配置）
-    parser.add_argument('--state_space', type=str, default='vector',
-                        help='Label to record in CSV, e.g. vector/god_view')
+    parser.add_argument('--state_space', type=str, default='vector')
 
     args = parser.parse_args()
     if args.tracker == 'policy' and args.tracker_model is None:

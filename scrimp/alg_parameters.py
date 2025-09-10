@@ -5,7 +5,7 @@ import datetime
 
 class EnvParameters:
     N_ACTIONS = 48  # action space size
-    EPISODE_LEN = 256  # maximum episode length
+    EPISODE_LEN = 800  # maximum episode length
 
 
 class TrainingParameters:
@@ -24,8 +24,13 @@ class TrainingParameters:
     DEMONSTRATION_PROB = 0.1  # probability of imitation learning
 
     # Agent training configuration
-    AGENT_TO_TRAIN = "target"  # "tracker" or "target"
-    OPPONENT_TYPE = "rule"      # "rule" or "policy"
+    AGENT_TO_TRAIN = "tracker"  # "tracker" or "target"
+    OPPONENT_TYPE = "expert" 
+        
+    # IL configuration
+    IL_TYPE = "policy"  # "expert" or "policy"
+    IL_TEACHER_TRACKER_PATH = "./models/TrackingEnv/DualAgent10-09-251052/best_model/tracker_net_checkpoint.pkl"
+    IL_TEACHER_TARGET_PATH = "./models/pretrained/target_teacher.pkl"
 
 
 class NetParameters:
